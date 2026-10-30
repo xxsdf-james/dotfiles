@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Load my selected GNOME settings (docs/philosophy.md §7, "selected keys").
+# The settings live in .chezmoitemplates/gnome-settings.ini; they're embedded below,
+# so chezmoi re-runs this whenever they change.
+set -euo pipefail
+
+if ! command -v dconf >/dev/null 2>&1 || [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]; then
+    echo "gnome: no dconf or no desktop session, skipping" >&2
+    exit 0
+fi
+
+echo "gnome: loading selected settings"
+dconf load / <<'EOF'
+{{ include ".chezmoitemplates/gnome-settings.ini" }}
+EOF
