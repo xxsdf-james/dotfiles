@@ -1,0 +1,10 @@
+# Personal git settings, managed by the dotfiles repo.
+# ~/.gitconfig is left to tools (e.g. `gh auth setup-git` writes its credential helper there).
+
+[user]
+	name = James Hart
+	email = {{ .email }}
+[init]
+	defaultBranch = main
+[pull]
+	rebase = true

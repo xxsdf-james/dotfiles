@@ -1,0 +1,11 @@
+{{/* Machine data, asked once per machine (docs/philosophy.md §4).
+     OS facts are not stored: read .chezmoi.os / .chezmoi.osRelease where needed.
+     No identity data lives in the repo: the email is asked here and kept only in
+     this machine's ~/.config/chezmoi/chezmoi.toml. */ -}}
+{{- $role := promptChoiceOnce . "role" "Machine role" (list "personal" "work") -}}
+{{- $install := promptChoiceOnce . "install" "Install level (dotfiles-only for live sessions)" (list "full" "dotfiles-only") -}}
+{{- $email := promptStringOnce . "email" "Git email (personal: GitHub no-reply address)" -}}
+[data]
+    role = {{ $role | quote }}
+    install = {{ $install | quote }}
+    email = {{ $email | quote }}
