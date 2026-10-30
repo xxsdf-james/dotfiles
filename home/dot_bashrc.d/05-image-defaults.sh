@@ -8,6 +8,17 @@ if [ -z "${HOMEBREW_PREFIX:-}" ] && [ -x /home/linuxbrew/.linuxbrew/bin/brew ]; 
     PATH="$PATH:$HOMEBREW_PREFIX/bin:$HOMEBREW_PREFIX/sbin"
 fi
 
+# Completions for brew-installed tools
+# (from Bluefin /etc/profile.d/brew-bash-completion.sh, 2026-10-30).
+# Checks whether brew's own completion is loaded in this shell rather than
+# $BREW_BASH_COMPLETION, which Bluefin exports (same nested-shell issue as below).
+if ! complete -p brew >/dev/null 2>&1 && [ -d "${HOMEBREW_PREFIX:-}/etc/bash_completion.d" ]; then
+    for rc in "$HOMEBREW_PREFIX"/etc/bash_completion.d/*; do
+        [ -r "$rc" ] && . "$rc"
+    done
+    unset rc
+fi
+
 # Starship prompt with its built-in defaults, no starship.toml
 # (from Bluefin /etc/profile.d/90-bluefin-starship.sh, 2026-10-30).
 # Checks for its function rather than $STARSHIP_SHELL: that variable is

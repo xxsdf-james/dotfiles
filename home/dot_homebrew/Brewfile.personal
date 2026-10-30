@@ -1,0 +1,26 @@
+# Personal-only packages (role = personal). Not installed on work machines.
+# Draft 2026-10-30, to be tuned after testing.
+
+# --- CLI ---
+brew "webtorrent-cli"
+brew "wireguard-tools" unless File.executable?("/usr/bin/wg")   # Mullvad profiles + kill switch
+
+# --- GUI: chat and media ---
+flatpak "org.telegram.desktop"
+flatpak "com.discordapp.Discord"
+flatpak "com.spotify.Client"
+flatpak "com.transmissionbt.Transmission"
+
+# --- GUI: learning and reading ---
+flatpak "net.ankiweb.Anki"
+flatpak "com.calibre_ebook.calibre"
+
+# --- GUI: making things ---
+flatpak "org.blender.Blender"
+flatpak "org.kde.kdenlive"
+flatpak "com.bambulab.BambuStudio"
+
+# --- GUI: hardware ---
+flatpak "org.openrgb.OpenRGB"
+flatpak "org.freedesktop.Piper"
+flatpak "org.raspberrypi.rpi-imager"

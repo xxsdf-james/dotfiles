@@ -1,0 +1,47 @@
+# Base packages for every full install (docs/philosophy.md §3).
+# CLI tools from brew, GUI apps from Flathub (installed system-wide, like Bluefin's own lists).
+# Personal-only apps are in Brewfile.personal. GNOME core apps come from the OS, so they aren't listed.
+# Draft 2026-10-30, to be tuned after testing.
+
+# --- CLI ---
+brew "bat"
+brew "chezmoi"
+brew "cosign"
+brew "eza"
+brew "gh"
+brew "neovim"
+brew "ripgrep"
+brew "shellcheck"
+brew "syncthing"
+brew "yt-dlp"
+
+# Only where the OS doesn't ship them (Bluefin does), so each machine has one copy.
+brew "fzf" unless File.executable?("/usr/bin/fzf")
+brew "jq" unless File.executable?("/usr/bin/jq")
+brew "starship" unless File.executable?("/usr/bin/starship")
+
+# --- GUI: everyday ---
+flatpak "com.brave.Browser"
+flatpak "org.keepassxc.KeePassXC"
+flatpak "md.obsidian.Obsidian"
+flatpak "org.libreoffice.LibreOffice"
+flatpak "org.mozilla.thunderbird_esr"
+flatpak "com.github.xournalpp.xournalpp"
+flatpak "com.github.mgropp.PdfJumbler"
+flatpak "com.belmoussaoui.Decoder"
+
+# --- GUI: system and containers ---
+flatpak "io.missioncenter.MissionCenter"   # Ctrl+Shift+Esc
+flatpak "com.ranfdev.DistroShelf"
+flatpak "org.gnome.Boxes"
+flatpak "org.gnome.Extensions"
+flatpak "org.fedoraproject.MediaWriter"
+
+# --- GUI: images and video (players under review in Task D) ---
+flatpak "org.gimp.GIMP"
+flatpak "io.photoflare.photoflare"
+flatpak "nl.hjdskes.gcolor3"
+flatpak "io.github.celluloid_player.Celluloid"
+flatpak "io.github.diegopvlk.Cine"
+flatpak "io.mpv.Mpv"
+flatpak "org.videolan.VLC"

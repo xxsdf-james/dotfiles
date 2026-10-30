@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Install what the Brewfiles list (docs/philosophy.md §3). chezmoi re-runs this
+# whenever a Brewfile changes; the hashes below are what it watches.
+# Brewfile: {{ include "dot_homebrew/Brewfile" | sha256sum }}
+{{- if eq .role "personal" }}
+# Brewfile.personal: {{ include "dot_homebrew/Brewfile.personal" | sha256sum }}
+{{- end }}
+# Only installs; never removes. To find extras: brew bundle cleanup --file=... (dry run).
+set -euo pipefail
+
+BREW=/home/linuxbrew/.linuxbrew/bin/brew
+if [ ! -x "$BREW" ]; then
+    echo "packages: brew not found, skipping (bootstrap installs it first)" >&2
+    exit 0
+fi
+
+for f in "$HOME/.homebrew/Brewfile" "$HOME/.homebrew/Brewfile.personal"; do
+    [ -f "$f" ] || continue
+    echo "packages: brew bundle --file=$f"
+    "$BREW" bundle install --file="$f" --no-upgrade
+done

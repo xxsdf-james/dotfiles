@@ -1,0 +1,12 @@
+# Paths here are targets in $HOME, not source names (docs/philosophy.md §5: skip whole files).
+
+{{- if ne .role "personal" }}
+.homebrew/Brewfile.personal
+{{- end }}
+
+{{- if eq .install "dotfiles-only" }}
+# Live sessions: dotfiles only, no package installs.
+.homebrew
+.homebrew/**
+10-packages.sh
+{{- end }}
