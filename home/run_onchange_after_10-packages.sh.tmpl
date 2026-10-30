@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Install what the Brewfiles list (docs/philosophy.md §3). chezmoi re-runs this
 # whenever a Brewfile changes; the hashes below are what it watches.
-# Brewfile: {{ include "dot_homebrew/Brewfile" | sha256sum }}
+# Brewfile: {{ include "private_dot_homebrew/Brewfile" | sha256sum }}
 {{- if eq .role "personal" }}
-# Brewfile.personal: {{ include "dot_homebrew/Brewfile.personal" | sha256sum }}
+# Brewfile.personal: {{ include "private_dot_homebrew/Brewfile.personal" | sha256sum }}
 {{- end }}
 # Only installs; never removes. To find extras: brew bundle cleanup --file=... (dry run).
 set -euo pipefail
