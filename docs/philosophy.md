@@ -32,6 +32,13 @@ A setup that is **portable, maintainable and reversible**, across:
 
 Most of the repo **never branches**. Real differences are allowed in only two places: the system layer and the bootstrap.
 
+**What earns a place in the package lists:**
+- "I chose it" isn't enough: OpenRGB was a deliberate install, opened once, and passed two reviews.
+- An app stays if I've **used it in the last 12 months**, or it's marked `# occasional: <reason>` in the Brewfile.
+- Evidence of use: the newest file in `~/.var/app/<id>` for Flatpaks, and bash history for CLI tools.
+- The update routine (plan Task D) flags listed apps with no use in 12 months.
+- Re-installing an occasional tool when I need it costs one command. Carrying an unused one costs updates, attention and drift.
+
 ## 4. The data model (the only "profiles")
 - **Detected, never asked, never stored:** the OS. Templates read chezmoi's built-in `.chezmoi.os` / `.chezmoi.osRelease`, and scripts read `/etc/os-release` when they run. Match on the family (`ID_LIKE`), not `ID`: Bluefin reports `ID=bluefin` with `ID_LIKE=fedora`.
 - **Asked once per machine:**
