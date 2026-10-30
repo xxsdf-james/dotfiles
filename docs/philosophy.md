@@ -88,6 +88,23 @@ This is the ideal for **everything** I keep, not only dotfiles: one canonical so
 - **Config** (this repo): git is the source, chezmoi applies it.
 - **Data** (Obsidian vaults, the KeePassXC database, Syncthing folders): data never goes in git (framework rule 4). The same principle still applies: **one canonical store**, sync as distribution, backups as history. Their *settings* (e.g. `keepassxc.ini`, chosen `.obsidian/` settings) can go through the repo. Their *contents* and secrets (Syncthing device keys, vault files) cannot.
 
+### Ownership modes: who owns each config file
+Apps change files too: through their GUI, or by rewriting them on their own. Every config picks exactly one mode:
+
+| Mode | chezmoi feature | Use for |
+|---|---|---|
+| **Managed** | plain file / `.tmpl` | text I edit by hand: bash, git, nvim |
+| **Create-once** | `create_` prefix | good starting defaults; after that the app owns the file |
+| **Selected keys** | `modify_` script, or `dconf load` of chosen keys | files the app rewrites, where only a few settings matter (`keepassxc.ini`, GNOME/Ptyxis dconf) |
+| **Unmanaged, app's own sync** | not in the repo | profiles and databases: Brave (Brave Sync), Obsidian vault contents, the KeePassXC database |
+
+**Drift:** chezmoi doesn't watch files, it compares when asked. When a managed file changes outside the repo, `chezmoi status` / `chezmoi diff` show it, and I decide:
+- keep it: `chezmoi re-add <file>`, review, commit
+- discard it: `chezmoi apply`, which asks before overwriting a file changed since it last wrote it
+- both sides changed: `chezmoi merge <file>`
+
+Selected keys don't show up as file diffs (dconf lives in a database), so they need their own check: compare my chosen keys with the values in effect. Drift checks run as part of the update routine (plan Task D).
+
 ## 8. The framework this sits inside
 From the 2026 cleanup plan (`~/Developer/claude-test/config-cleanup-plan.md`, "The framework"):
 - keep my layer small
