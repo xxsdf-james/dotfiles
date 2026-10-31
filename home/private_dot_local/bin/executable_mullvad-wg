@@ -1,0 +1,251 @@
+#!/usr/bin/env bash
+# mullvad-wg: Mullvad WireGuard profiles for NetworkManager, through Mullvad's API (2026-10-31).
+# The machine that uses a key makes it; only the public key goes to Mullvad, as a device.
+#
+# On the machine that will use the tunnel (needs wg, nmcli):
+#   mullvad-wg keygen <profile>                    make a key pair in RAM, print the public key
+#   mullvad-wg import <peer-spec> [--boot]         create the NM profile, then forget the key
+# On the machine that holds the account (needs curl, jq; wl-paste for the clipboard):
+#   mullvad-wg register <server> --pubkey K [--profile P] [--machine M]
+#                                                  add the device, print the peer-spec for `import`
+#   mullvad-wg devices                             devices on the account, with the machine each is for
+#   mullvad-wg remove --machine M [--profile P]    remove that machine's devices (all, or one profile)
+#   mullvad-wg remove --device ID                  remove a device by ID (e.g. one made elsewhere)
+# Both on one machine:
+#   mullvad-wg add <server> [--profile P] [--boot] keygen + register + import
+# Anywhere:
+#   mullvad-wg relays [filter]                     servers, e.g. `relays ch-zrh` (no account needed)
+#
+# <server> is a hostname from `relays`, e.g. ch-zrh-wg-001. The profile is named after it,
+# mv-<cc>-<city>-<NNN> (mv-ch-zrh-001): the name says which server, and the kill switch
+# only lets mv-* through. Which machine a device is for lives in the registry, not the name.
+# Profiles get autoconnect off, except the one imported with --boot.
+#
+# Secrets: the private key exists only in RAM ($XDG_RUNTIME_DIR) until NetworkManager stores
+# it (root-only); it's never on a command line or in a file on disk. The account number is
+# read once from the clipboard (copy it from KeePassXC), which is then cleared; it's never
+# printed, saved or put on a command line. MULLVAD_ACCOUNT overrides the clipboard.
+set -euo pipefail
+
+API=https://api.mullvad.net
+DNS=10.64.0.1                                                   # Mullvad's in-tunnel DNS
+KEYS="${XDG_RUNTIME_DIR:?needs a user session (XDG_RUNTIME_DIR)}/mullvad-wg"   # RAM only
+STATE="${XDG_STATE_HOME:-$HOME/.local/state}/mullvad-wg"
+REGISTRY="$STATE/devices.tsv"    # id, name, pubkey, profile, server, machine, date; nothing secret
+
+die() { echo "mullvad-wg: $*" >&2; exit 1; }
+usage() { sed -n '/^# On the machine that will use/,/^#   mullvad-wg relays/p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+this_machine() { hostname -s; }
+
+check_profile() {
+  [[ $1 =~ ^mv-[a-z0-9-]+$ && ${#1} -le 15 ]] || die "profile must start with mv- and be at most 15 characters (an interface name): $1"
+}
+profile_of() {  # ch-zrh-wg-001 -> mv-ch-zrh-001
+  [[ $1 =~ ^([a-z]{2})-([a-z]{3})-wg-([0-9]{3})$ ]] || die "can't derive a profile from '$1'; give --profile mv-<cc>-<city>-<NNN>"
+  echo "mv-${BASH_REMATCH[1]}-${BASH_REMATCH[2]}-${BASH_REMATCH[3]}"
+}
+nm_has() { nmcli -t -f NAME connection show | grep -qx "$1"; }
+
+# ── API ──────────────────────────────────────────────────────────────────────
+TOKEN=""
+token() {  # call in the main shell: $(…) is a subshell and would lose TOKEN
+  [[ -n $TOKEN ]] && return
+  local a=${MULLVAD_ACCOUNT:-}
+  if [[ -z $a ]]; then
+    command -v wl-paste >/dev/null || die "no wl-paste; set MULLVAD_ACCOUNT instead"
+    a=$(wl-paste --no-newline 2>/dev/null || true)
+    wl-copy --clear 2>/dev/null || true
+  fi
+  a=${a//[[:space:]]/}
+  [[ $a =~ ^[0-9]{16}$ ]] || die "not a 16-digit account number (copy it from KeePassXC first, or check MULLVAD_ACCOUNT)"
+  # printf is a shell builtin, so the number never appears in a process's arguments.
+  TOKEN=$(printf '{"account_number":"%s"}' "$a" \
+    | curl -fsS -X POST -H 'content-type: application/json' --data-binary @- "$API/auth/v1/token" \
+    | jq -r '.access_token // empty') || true
+  unset a
+  [[ -n $TOKEN ]] || die "login failed (wrong account number?)"
+}
+api() {  # api METHOD PATH [JSON]; the token goes in through a curl config on a pipe, not argv
+  [[ -n $TOKEN ]] || die "internal: token() not called"
+  local cfg=(--config <(printf 'header = "authorization: Bearer %s"\n' "$TOKEN"))
+  if [[ -n ${3:-} ]]; then
+    curl -fsS -X "$1" "${cfg[@]}" -H 'content-type: application/json' --data-binary @- "$API$2" <<<"$3"
+  else
+    curl -fsS -X "$1" "${cfg[@]}" "$API$2"
+  fi
+}
+relays() { curl -fsS "$API/www/relays/wireguard/"; }
+
+# ── registry ─────────────────────────────────────────────────────────────────
+reg_add() { install -d -m 700 "$STATE"; ( umask 077; printf '%s\n' "$(IFS=$'\t'; echo "$*")" >>"$REGISTRY" ); }
+reg_del() { [[ -f $REGISTRY ]] && awk -F'\t' -v id="$1" '$1 != id' "$REGISTRY" >"$REGISTRY.new" && mv "$REGISTRY.new" "$REGISTRY"; }
+reg_ids() {  # reg_ids MACHINE [PROFILE] -> device ids
+  [[ -f $REGISTRY ]] || return 0
+  awk -F'\t' -v m="$1" -v p="${2:-}" '$6 == m && (p == "" || $4 == p) {print $1}' "$REGISTRY"
+}
+
+# ── target side ──────────────────────────────────────────────────────────────
+cmd_keygen() {
+  local profile=${1:-}; [[ -n $profile ]] || usage
+  check_profile "$profile"
+  nm_has "$profile" && die "NetworkManager already has a profile $profile"
+  install -d -m 700 "$KEYS"
+  [[ -e $KEYS/$profile.key ]] && die "a key for $profile is already waiting in $KEYS (import it, or delete it)"
+  ( umask 077; wg genkey >"$KEYS/$profile.key" )
+  wg pubkey <"$KEYS/$profile.key"
+}
+
+cmd_import() {
+  local spec="" boot=0
+  while (($#)); do
+    case $1 in --boot) boot=1; shift ;; -*) usage ;; *) spec+="$1 "; shift ;; esac
+  done
+  local profile="" pubkey="" addr="" peer="" endpoint="" kv
+  for kv in $spec; do
+    case $kv in
+      profile=*) profile=${kv#*=} ;; pubkey=*) pubkey=${kv#*=} ;; addr=*) addr=${kv#*=} ;;
+      peer=*) peer=${kv#*=} ;; endpoint=*) endpoint=${kv#*=} ;;
+      *) die "unknown field in peer-spec: ${kv%%=*}" ;;
+    esac
+  done
+  [[ -n $profile && -n $pubkey && -n $addr && -n $peer && -n $endpoint ]] || die "incomplete peer-spec (copy the whole line from register)"
+  check_profile "$profile"
+  local key="$KEYS/$profile.key"
+  [[ -f $key ]] || die "no key for $profile in $KEYS (run keygen on this machine first)"
+  [[ $(wg pubkey <"$key") == "$pubkey" ]] || die "the peer-spec is for a different key than the one made here"
+  nm_has "$profile" && die "NetworkManager already has a profile $profile"
+
+  # nmcli imports from a file; it's built in RAM next to the key and deleted right after.
+  local conf="$KEYS/$profile.conf"
+  ( umask 077
+    { echo "[Interface]"
+      printf 'PrivateKey = %s\n' "$(<"$key")"
+      echo "Address = $addr"
+      echo "DNS = $DNS"
+      echo
+      echo "[Peer]"
+      echo "PublicKey = $peer"
+      echo "AllowedIPs = 0.0.0.0/0,::/0"
+      echo "Endpoint = $endpoint"
+    } >"$conf" )
+  local rc=0
+  nmcli connection import type wireguard file "$conf" >/dev/null || rc=$?
+  rm -f -- "$conf" "$key"
+  ((rc == 0)) || die "nmcli import failed; the key is deleted, so run keygen again"
+  local auto=no; ((boot)) && auto=yes
+  nmcli connection modify "$profile" connection.autoconnect "$auto"
+  echo "imported $profile (autoconnect $auto); the key is now only in NetworkManager"
+  echo "connect with: nmcli connection up $profile"
+}
+
+# ── account side ─────────────────────────────────────────────────────────────
+cmd_register() {
+  local server="" pubkey="" profile="" machine
+  machine=$(this_machine)
+  while (($#)); do
+    case $1 in
+      --pubkey) pubkey=${2:?}; shift 2 ;;
+      --profile) profile=${2:?}; shift 2 ;;
+      --machine) machine=${2:?}; shift 2 ;;
+      -*) usage ;;
+      *) server=$1; shift ;;
+    esac
+  done
+  [[ -n $server && -n $pubkey ]] || usage
+  [[ $pubkey =~ ^[A-Za-z0-9+/]{43}=$ ]] || die "that doesn't look like a WireGuard public key"
+  [[ -n $profile ]] || profile=$(profile_of "$server")
+  check_profile "$profile"
+  [[ -n $(reg_ids "$machine" "$profile") ]] && die "$machine already has a device for $profile (remove it first)"
+
+  local relay
+  relay=$(relays | jq -c --arg h "$server" '.[] | select(.hostname == $h and .active)')
+  [[ -n $relay ]] || die "no active server '$server' (see: mullvad-wg relays)"
+
+  token
+  [[ $(api GET /accounts/v1/accounts/me | jq -r .can_add_devices) == true ]] \
+    || die "no free device slot on the account (see: mullvad-wg devices)"
+  local dev
+  dev=$(api POST /accounts/v1/devices "$(jq -nc --arg k "$pubkey" '{pubkey: $k, hijack_dns: false}')") \
+    || die "registering the key failed"
+  [[ $(jq -r .pubkey <<<"$dev") == "$pubkey" ]] || die "unexpected answer from Mullvad: $(jq -c 'del(.pubkey)' <<<"$dev")"
+
+  reg_add "$(jq -r .id <<<"$dev")" "$(jq -r .name <<<"$dev")" "$pubkey" "$profile" "$server" "$machine" "$(date -I)"
+  echo "device '$(jq -r .name <<<"$dev")' registered for $machine" >&2
+  echo "profile=$profile pubkey=$pubkey addr=$(jq -r '"\(.ipv4_address),\(.ipv6_address)"' <<<"$dev") peer=$(jq -r .pubkey <<<"$relay") endpoint=$(jq -r .ipv4_addr_in <<<"$relay"):51820"
+}
+
+cmd_devices() {
+  token
+  local devs
+  devs=$(api GET /accounts/v1/devices)
+  {
+    printf 'ID\tNAME\tCREATED\tMACHINE\tPROFILE\n'
+    jq -r '.[] | [.id, .name, (.created[0:10]), .pubkey] | @tsv' <<<"$devs" \
+      | while IFS=$'\t' read -r id name created pub; do
+          m="" p=""
+          [[ -f $REGISTRY ]] && IFS=$'\t' read -r m p < <(awk -F'\t' -v k="$pub" '$3 == k {print $6 "\t" $4; exit}' "$REGISTRY") || true
+          printf '%s\t%s\t%s\t%s\t%s\n' "$id" "$name" "$created" "${m:-(not in registry)}" "${p:--}"
+        done
+  } | column -t -s $'\t'
+}
+
+cmd_remove() {
+  local machine="" profile="" device=""
+  while (($#)); do
+    case $1 in
+      --machine) machine=${2:?}; shift 2 ;;
+      --profile) profile=${2:?}; shift 2 ;;
+      --device) device=${2:?}; shift 2 ;;
+      *) usage ;;
+    esac
+  done
+  local ids=()
+  if [[ -n $device ]]; then ids=("$device")
+  elif [[ -n $machine ]]; then mapfile -t ids < <(reg_ids "$machine" "$profile")
+  else usage; fi
+  ((${#ids[@]})) || die "nothing in the registry for ${machine}${profile:+ / $profile}"
+
+  token
+  local id prof
+  for id in "${ids[@]}"; do
+    prof=""
+    [[ -f $REGISTRY ]] && prof=$(awk -F'\t' -v id="$id" '$1 == id {print $4; exit}' "$REGISTRY")
+    if api DELETE "/accounts/v1/devices/$id" >/dev/null; then echo "removed device $id${prof:+ ($prof)} at Mullvad"
+    else echo "device $id: not found at Mullvad (already removed?)"; fi
+    reg_del "$id"
+    if [[ -n $prof && $machine == "$(this_machine)" ]] && nm_has "$prof"; then
+      nmcli connection delete "$prof" >/dev/null && echo "deleted NetworkManager profile $prof"
+    fi
+  done
+}
+
+cmd_add() {
+  local server="" profile="" boot=()
+  while (($#)); do
+    case $1 in
+      --profile) profile=${2:?}; shift 2 ;;
+      --boot) boot=(--boot); shift ;;
+      -*) usage ;;
+      *) server=$1; shift ;;
+    esac
+  done
+  [[ -n $server ]] || usage
+  [[ -n $profile ]] || profile=$(profile_of "$server")
+  local pub spec
+  pub=$(cmd_keygen "$profile")
+  token   # here, so the subshell below inherits it
+  spec=$(cmd_register "$server" --pubkey "$pub" --profile "$profile") \
+    || { rm -f -- "$KEYS/$profile.key"; die "register failed; key deleted"; }
+  cmd_import "$spec" "${boot[@]}"
+}
+
+cmd_relays() {
+  relays | jq -r --arg f "${1:-}" '.[] | select(.active and (.hostname | contains($f)))
+    | "\(.hostname)\t\(.city_name), \(.country_name)\t\(.provider)\(if .owned then " (owned)" else "" end)"' \
+    | column -t -s $'\t'
+}
+
+case ${1:-} in
+  keygen|import|register|devices|remove|add|relays) c=$1; shift; "cmd_$c" "$@" ;;
+  *) usage ;;
+esac

@@ -2,6 +2,7 @@
 
 {{- if ne .role "personal" }}
 .homebrew/Brewfile.personal
+.local/bin/mullvad-wg
 {{- end }}
 
 {{- if eq .install "dotfiles-only" }}
