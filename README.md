@@ -30,7 +30,7 @@ brew install chezmoi
 **Ubuntu:** install Flatpak and brew's dependencies, then brew itself.
 ```sh
 sudo apt install build-essential procps curl file git flatpak
-flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+sudo flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
 curl -fsSL -o /tmp/brew-install.sh https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh
 less /tmp/brew-install.sh          # read it first
 bash /tmp/brew-install.sh          # it only prints the shellenv line; .bashrc.d/05 already does that

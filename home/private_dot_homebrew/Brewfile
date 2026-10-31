@@ -21,6 +21,7 @@ brew "yt-dlp"
 brew "fzf" unless File.executable?("/usr/bin/fzf")
 brew "jq" unless File.executable?("/usr/bin/jq")
 brew "starship" unless File.executable?("/usr/bin/starship")
+cask "font-symbols-only-nerd-font" unless File.exist?("/usr/share/fonts/nerd-fonts/SymbolsNerdFont-Regular.ttf")   # icons for eza
 
 # --- GUI: everyday ---
 flatpak "com.brave.Browser"

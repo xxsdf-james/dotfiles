@@ -6,8 +6,8 @@ Before=network-pre.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/bin/nft -f /etc/killswitch.nft
-ExecStop=/usr/bin/nft delete table inet killswitch
+ExecStart=nft -f /etc/killswitch.nft
+ExecStop=nft delete table inet killswitch
 
 [Install]
 WantedBy=multi-user.target
