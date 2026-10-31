@@ -22,8 +22,9 @@ My Linux config, managed with [chezmoi](https://chezmoi.io). It isn't tied to a 
 The repo is public, so no login is needed to restore. Read any downloaded script before running it.
 
 ### 1. Bootstrap (per OS)
-**Bluefin:** brew is already installed.
+**Bluefin:** brew is already installed, but it's the image's version, which can be older than the taps expect.
 ```sh
+brew update
 brew install chezmoi
 ```
 
