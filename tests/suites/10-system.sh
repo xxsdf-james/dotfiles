@@ -82,7 +82,13 @@ if systemctl is-active --quiet killswitch.service 2>/dev/null && ! ip -o link sh
   else
     skip "live: no default route, router checks skipped"
   fi
-  refute "live, VPN down: name lookup fails" timeout 5 getent hosts example.com
+  # Past systemd-resolved's cache: a name looked up earlier (VPN up, or K5's run with the kill
+  # switch stopped) would otherwise still resolve.
+  if resolvectl status >/dev/null 2>&1; then
+    refute "live, VPN down: name lookup fails (resolved, cache bypassed)" timeout 8 resolvectl query --cache=no example.com
+  else
+    refute "live, VPN down: name lookup fails" timeout 5 getent hosts example.com
+  fi
 
   # K5, IPv6: the table is inet and output's policy is drop, so a global IPv6 send must fail with
   # EPERM. ENETUNREACH means there's no IPv6 route, so the packet never reached the kill switch:
@@ -96,18 +102,19 @@ if systemctl is-active --quiet killswitch.service 2>/dev/null && ! ip -o link sh
        else fail "live, VPN down: IPv6 send failed for another reason: $(tail -n1 <<<"$v6")"; fi ;;
   esac
 
-  # K5, boot order: after a boot, the kill switch must be active before NetworkManager starts.
-  # If it started long after NetworkManager, it was started by hand or by an apply since boot.
+  # K5, boot order: at boot, the kill switch must be active before NetworkManager starts.
+  # Started after the boot finished means by hand or by an apply: nothing to judge, reboot first.
   ks=$(systemctl show -P ActiveEnterTimestampMonotonic killswitch.service 2>/dev/null)
   nm=$(systemctl show -P ExecMainStartTimestampMonotonic NetworkManager.service 2>/dev/null)
-  if [[ ${ks:-0} == 0 || ${nm:-0} == 0 ]]; then
-    skip "live boot order: no NetworkManager start time here"
+  booted=$(systemctl show -P FinishTimestampMonotonic 2>/dev/null)
+  if [[ ${ks:-0} == 0 || ${nm:-0} == 0 || ${booted:-0} == 0 ]]; then
+    skip "live boot order: no NetworkManager or boot-finished time here"
+  elif ((ks > booted)); then
+    skip "live boot order: kill switch started after the boot finished (by hand or an apply; reboot and run again)"
   elif ((ks <= nm)); then
     pass "live boot order: kill switch active before NetworkManager started"
-  elif ((ks - nm > 120000000)); then
-    skip "live boot order: kill switch started $(((ks - nm) / 1000000)) s after NetworkManager (by hand or an apply since boot; reboot and run again)"
   else
-    fail "live boot order: kill switch active $(((ks - nm) / 1000000)) s after NetworkManager started"
+    fail "live boot order: kill switch active $(((ks - nm) / 1000)) ms after NetworkManager started"
   fi
 
   # K5, forward chain: a rootful container's traffic is forwarded (rootless podman goes through
@@ -115,16 +122,23 @@ if systemctl is-active --quiet killswitch.service 2>/dev/null && ! ip -o link sh
   # and the image already pulled (the pull itself is blocked with the VPN down).
   img=${KS_TEST_IMAGE:-docker.io/library/busybox:latest}
   if command -v podman >/dev/null && sudo -n podman image exists "$img" 2>/dev/null; then
-    ctr() { sudo -n podman run --rm --network bridge "$img" "$@"; }
+    ctr() { sudo -n podman run --rm --network bridge "${cap[@]}" "$img" "$@"; }
+    cap=()
     refute "live, container: TCP to 1.1.1.1:443 blocked (forward chain)" ctr timeout 5 nc 1.1.1.1 443 </dev/null
     refute "live, container: DNS lookup via 9.9.9.9 blocked" ctr timeout 5 nslookup example.com 9.9.9.9
     if [[ -n $gw ]]; then
       refute "live, container: DNS lookup via the router ($gw) blocked" ctr timeout 5 nslookup example.com "$gw"
+      # The positive control (a forwarded packet that must still pass). Podman drops NET_RAW by default.
+      cap=(--cap-add NET_RAW)
       check "live, container: ping to the router ($gw) still allowed" ctr ping -c 1 -W 3 "$gw"
+      cap=()
     fi
   else
     skip "live container checks: need podman, sudo -n and the image $img pulled (run on the VM)"
   fi
+elif systemctl is-enabled --quiet killswitch.service 2>/dev/null && ! systemctl is-active --quiet killswitch.service; then
+  # K5: an ordering cycle at boot made systemd drop the start job silently; this used to be a SKIP.
+  fail "live: kill switch enabled but not active (see: journalctl -b -u killswitch; grep the boot log for 'ordering cycle')"
 else
-  skip "live kill switch checks: service not active here, or a mv-* tunnel is up (run on the VM)"
+  skip "live kill switch checks: service not installed here, or a mv-* tunnel is up (run on the VM)"
 fi
