@@ -33,6 +33,8 @@ for f in "${suites[@]}"; do
   printf '%s\n' "$out"
   p=$(grep -c '^  PASS' <<<"$out"); x=$(grep -c '^  FAIL' <<<"$out"); s=$(grep -c '^  SKIP' <<<"$out")
   if ((rc != 0 && x == 0)); then echo "  FAIL  suite stopped early (exit $rc)"; x=1; fi
+  # K5: a suite that ended without a PASS, FAIL or SKIP must not look clean.
+  if ((p + x + s == 0)); then echo "  FAIL  suite ran no checks (exit $rc)"; x=1; fi
   ((x)) && failed=1
   summary+=("$(printf '%-12s %3d passed, %d failed, %d skipped' "$name" "$p" "$x" "$s")")
 done
