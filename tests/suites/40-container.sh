@@ -9,6 +9,9 @@
 needs podman
 IMAGE=docker.io/library/ubuntu:26.04
 podman info >/dev/null 2>&1 || { skip "whole suite: podman doesn't run here (sandbox?)"; exit 0; }
+# K5: with the kill switch on and no VPN, the pull fails; that used to end the suite with no result.
+podman image exists "$IMAGE" || podman pull -q "$IMAGE" >/dev/null 2>&1 \
+  || { skip "whole suite: can't pull $IMAGE (no network: kill switch on and no VPN up?)"; exit 0; }
 
 # Runs inside the container: as root to add a live session's tools, then as the user.
 cat >"$WORK/inner.sh" <<'INNER'
