@@ -4,6 +4,6 @@
 ROLES="personal"
 OS="any"
 CHECK="systemctl is-enabled --quiet killswitch.service && systemctl is-active --quiet killswitch.service"
-AFTER_APPLY="systemctl daemon-reload && systemctl enable killswitch.service && systemctl restart killswitch.service"
+AFTER_APPLY="systemctl daemon-reload && systemctl enable killswitch.service && systemctl reload-or-restart killswitch.service"
 BEFORE_REMOVE="systemctl disable --now killswitch.service"
 AFTER_REMOVE="systemctl daemon-reload"

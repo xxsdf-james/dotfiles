@@ -41,7 +41,10 @@ fi
 # Kill switch files. dceb925: Ubuntu keeps nft in /usr/sbin, so the unit names it bare
 # (systemd's search path finds it) instead of a Fedora path.
 unit="$REPO/system/killswitch/files/etc/systemd/system/killswitch.service"
-check "unit: ExecStart/ExecStop call nft by name, not by path" test "$(grep -cE '^Exec(Start|Stop)=nft ' "$unit")" = 2
+check "unit: ExecStart/ExecReload/ExecStop call nft by name, not by path" test "$(grep -cE '^Exec(Start|Reload|Stop)=nft ' "$unit")" = 3
+# K3: a rule change reloads (one nft -f transaction) instead of restarting, which dropped the table for a moment.
+check "unit: ExecReload loads the rules file" grep -qx 'ExecReload=nft -f /etc/killswitch.nft' "$unit"
+check "manifest: apply uses reload-or-restart, not restart" grep -q 'reload-or-restart killswitch.service' "$REPO/system/killswitch/manifest"
 rules="$REPO/system/killswitch/files/etc/killswitch.nft"
 if nft -c -f "$rules" >/dev/null 2>&1 || unshare -rn nft -c -f "$rules" >/dev/null 2>&1; then
   pass "rules: nft accepts the syntax (nft -c)"
@@ -49,4 +52,32 @@ elif ! command -v nft >/dev/null; then
   skip "rules syntax: no nft here"
 else
   skip "rules syntax: nft -c needs root or a user namespace here (try: pkexec nft -c -f $rules)"
+fi
+
+# K3: no plain UDP to 51820 (only packets with WireGuard's fwmark), no DNS outside the tunnel.
+check "rules: port 51820 only with a fwmark" has "$rules" '^\s*meta mark != 0 udp dport 51820 accept$'
+refute "rules: no bare 'udp dport 51820 accept' left" has "$rules" '^\s*udp dport 51820 accept'
+dns_before_lan() {  # dns_before_lan CHAIN: the DNS drop comes before that chain's LAN accept
+  awk -v c="$1" '$1=="chain"{in_c=($2==c)} in_c&&/th dport \{ 53, 853 \} drop/{d=NR} in_c&&/ip daddr \{ 10\.0\.0\.0\/8/{l=NR} END{exit !(d&&l&&d<l)}' "$rules"
+}
+check "rules: output drops DNS (53, 853) before the LAN accept" dns_before_lan output
+check "rules: forward drops DNS (53, 853) before the LAN accept" dns_before_lan forward
+
+# Live checks, only where the kill switch runs and no tunnel is up (the VM test). A packet the
+# output chain drops makes the send fail with EPERM, so no root is needed to see it.
+if systemctl is-active --quiet killswitch.service 2>/dev/null && ! ip -o link show 2>/dev/null | grep -q ' mv-'; then
+  udp() { timeout 3 bash -c "echo x >/dev/udp/$1/$2" 2>/dev/null; }
+  gw=$(ip route show default 2>/dev/null | awk '{print $3; exit}')
+  refute "live, VPN down: plain UDP to 192.0.2.1:51820 blocked" udp 192.0.2.1 51820
+  refute "live, VPN down: DNS to 9.9.9.9:53 blocked" udp 9.9.9.9 53
+  refute "live, VPN down: DNS over TLS/QUIC to 9.9.9.9:853 blocked" udp 9.9.9.9 853
+  if [[ -n $gw ]]; then
+    refute "live, VPN down: DNS to the router ($gw:53) blocked" udp "$gw" 53
+    check "live, VPN down: other LAN traffic to the router still allowed ($gw:9)" udp "$gw" 9
+  else
+    skip "live: no default route, router checks skipped"
+  fi
+  refute "live, VPN down: name lookup fails" timeout 5 getent hosts example.com
+else
+  skip "live kill switch checks: service not active here, or a mv-* tunnel is up (run on the VM)"
 fi
