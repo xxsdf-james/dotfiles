@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Test fake: this machine is always "testbox".
+echo testbox

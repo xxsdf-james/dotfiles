@@ -1,15 +1,13 @@
+{{- /* Rendered empty without git (a live session): nothing can be committed, so there's nothing
+     to check (philosophy rule 6). chezmoi neither runs nor records an empty script, so the
+     next apply after git is installed sets the hooks (backlog M3 K2; test: tests/suites/30-chezmoi.sh). */ -}}
+{{- if lookPath "git" -}}
 #!/usr/bin/env bash
 # Turn on this repo's versioned git hooks (backlog M0 G4, 2026-10-31): the gitleaks pre-commit check.
 # The check is required on every machine; full installs get gitleaks from the Brewfile.
 set -euo pipefail
 repo={{ .chezmoi.workingTree | quote }}
 
-# No git (a live session): nothing can be committed, so there's nothing to check (philosophy rule 6).
-# This script doesn't re-run when git is installed later; full installs always have git.
-if ! command -v git >/dev/null 2>&1; then
-    echo "git hooks: no git, skipping" >&2
-    exit 0
-fi
-
 git -C "$repo" config core.hooksPath .githooks
 echo "git hooks: on for $repo (gitleaks pre-commit check, required)"
+{{ end -}}

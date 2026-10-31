@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Test fake (tests/suites/20-mullvad-wg.sh): NetworkManager with a profile list in $FAKE/nm.list.
+echo "nmcli $*" >>"$FAKE/nmcli.log"
+case "$*" in
+  "-t -f PERMISSION,VALUE general permissions")
+    [[ $NM_PERM == fail ]] && exit 8
+    echo "org.freedesktop.NetworkManager.settings.modify.own:$NM_PERM"
+    echo "org.freedesktop.NetworkManager.settings.modify.system:$NM_PERM";;
+  "-t -f NAME connection show") cat "$FAKE/nm.list" 2>/dev/null;;
+  "connection import type wireguard file "*) f=${*: -1}; grep -q PrivateKey "$f" && basename "$f" .conf >>"$FAKE/nm.list";;
+  *) :;;
+esac
