@@ -5,7 +5,7 @@ My Linux config, managed with [chezmoi](https://chezmoi.io). It isn't tied to a 
 ## Layout
 - `home/`: what chezmoi copies into `$HOME` (`.chezmoiroot` points here)
 - `docs/`: the philosophy behind the setup
-- `system/`: system-level files and `install.sh` (to come)
+- `system/`: files for `/etc`, one folder per component, installed by `system/install.sh` (usage in its header)
 
 ## Daily use
 - `chezmoi edit <file>` → `chezmoi diff` → `chezmoi apply`

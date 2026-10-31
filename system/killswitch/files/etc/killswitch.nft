@@ -1,0 +1,38 @@
+# VPN kill switch: only traffic through the Mullvad tunnel (mv-*) may leave this
+# machine. LAN, DHCP and link-local traffic stay allowed. Loaded by killswitch.service.
+
+# Make the file re-runnable: create the table if missing, then delete and rebuild it.
+table inet killswitch
+delete table inet killswitch
+
+table inet killswitch {
+	chain output {
+		type filter hook output priority filter; policy drop;
+
+		oifname "lo" accept
+		oifname "mv-*" accept
+
+		# Encrypted WireGuard packets to the Mullvad server (port from your config)
+		udp dport 51820 accept
+
+		# DHCP / DHCPv6 / neighbour discovery
+		udp sport 68 udp dport 67 accept
+		udp sport 546 udp dport 547 accept
+		meta l4proto ipv6-icmp accept
+
+		# Local network, link-local and multicast (printers, mDNS, router)
+		ip daddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 224.0.0.0/4, 255.255.255.255 } accept
+		ip6 daddr { fe80::/10, fc00::/7, ff00::/8 } accept
+	}
+
+	chain forward {
+		type filter hook forward priority filter; policy accept;
+
+		# Containers (Docker/Podman) may only reach the internet through the tunnel
+		oifname "mv-*" accept
+		ip daddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 } accept
+		ip6 daddr { fe80::/10, fc00::/7 } accept
+		oifname "wl*" drop
+		oifname "en*" drop
+	}
+}

@@ -1,0 +1,9 @@
+# shellcheck shell=bash disable=SC2034
+# VPN kill switch: only traffic through the mv-* WireGuard tunnels leaves the machine.
+# Captive portal? `systemctl stop killswitch`, log in, then `systemctl start killswitch`.
+ROLES="personal"
+OS="any"
+CHECK="systemctl is-enabled --quiet killswitch.service && systemctl is-active --quiet killswitch.service"
+AFTER_APPLY="systemctl daemon-reload && systemctl enable killswitch.service && systemctl restart killswitch.service"
+BEFORE_REMOVE="systemctl disable --now killswitch.service"
+AFTER_REMOVE="systemctl daemon-reload"
