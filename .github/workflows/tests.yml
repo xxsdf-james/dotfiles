@@ -1,0 +1,43 @@
+# tests/run.sh on GitHub's runner, as the required status check on main (backlog M3b K7, 2026-10-31).
+# Covers what needs no secrets and no real machine. The VM run and the live kill switch checks
+# stay manual, with their results pasted into the PR as before; this job doesn't replace them.
+# No secrets, read-only token. Third-party code is pinned: the action by commit, the
+# downloads by version and checksum (written here, so a release swapped later fails the job).
+name: tests
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [next]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:   # the ruleset requires this job by name: "tests"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install chezmoi (same version as the laptop)
+        env:
+          VERSION: 2.73.3
+          SHA256: 2064f23d8d0b8d4b9c12fa1643344fa3cfd0c63b048d511e7bcc6a057b482b75
+        run: |
+          deb="chezmoi_${VERSION}_linux_amd64.deb"
+          curl -fsSLo "$RUNNER_TEMP/$deb" "https://github.com/twpayne/chezmoi/releases/download/v${VERSION}/$deb"
+          echo "$SHA256  $RUNNER_TEMP/$deb" | sha256sum -c -
+          sudo apt-get install -y -qq "$RUNNER_TEMP/$deb"
+
+      # nft -c checks the kill switch rules' syntax; the suite runs it through sudo -n, which the
+      # runner allows. The rules are only parsed, never loaded.
+      - name: Install nftables, jq
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq nftables jq
+
+      - name: tests/run.sh
+        run: tests/run.sh
