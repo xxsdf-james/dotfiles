@@ -39,7 +39,15 @@ done
 
 echo "==> results ($(uname -n), $(. /etc/os-release && echo "$PRETTY_NAME"), $(date -u '+%F %H:%M UTC'))"
 printf '  %s\n' "${summary[@]}"
+# The commit without git (a fresh Ubuntu has none): HEAD names a branch, whose commit is in
+# .git/refs/heads/ or, after a clone or gc, in .git/packed-refs.
 if [[ -r $repo/.git/HEAD ]]; then
-  echo "  repo: $(cat "$repo/.git/HEAD")$(git -C "$repo" rev-parse --short HEAD 2>/dev/null | sed 's/^/ at /')"
+  head=$(cat "$repo/.git/HEAD") sha=$head
+  if [[ $head == "ref: "* ]]; then
+    ref=${head#ref: } sha=
+    if [[ -r $repo/.git/$ref ]]; then sha=$(cat "$repo/.git/$ref")
+    else sha=$(awk -v r="$ref" '$2 == r { print $1 }' "$repo/.git/packed-refs" 2>/dev/null); fi
+  fi
+  echo "  repo: $head${sha:+ at ${sha:0:7}}"
 fi
 exit $failed

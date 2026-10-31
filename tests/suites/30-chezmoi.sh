@@ -40,6 +40,8 @@ check ".bashrc and .bashrc.d" test -f "$H/.bashrc" -a -d "$H/.bashrc.d"
 check "~/.config is private, 700 (dceb925)" test "$(stat -c %a "$H/.config")" = 700
 check "dotfiles-only: no Brewfiles" test ! -e "$H/.homebrew"
 check "personal: mullvad-wg installed, executable" test -x "$H/.local/bin/mullvad-wg"
+# shellcheck disable=SC2088  # a label, not a path
+check "~/.config/no-show-user-motd (hides Bluefin's login banner)" test -f "$H/.config/no-show-user-motd"
 check "git email from the prompt" has "$H/.config/git/config" 'email = test@example.invalid'
 
 cz desktop apply

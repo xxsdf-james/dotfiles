@@ -44,14 +44,19 @@ unit="$REPO/system/killswitch/files/etc/systemd/system/killswitch.service"
 check "unit: ExecStart/ExecReload/ExecStop call nft by name, not by path" test "$(grep -cE '^Exec(Start|Reload|Stop)=nft ' "$unit")" = 3
 # K3: a rule change reloads (one nft -f transaction) instead of restarting, which dropped the table for a moment.
 check "unit: ExecReload loads the rules file" grep -qx 'ExecReload=nft -f /etc/killswitch.nft' "$unit"
+# K5: the rules must be loaded before the network comes up at boot, not after.
+check "unit: ordered before the network (Before=network-pre.target)" grep -qx 'Before=network-pre.target' "$unit"
+check "unit: started at boot (WantedBy=multi-user.target)" grep -qx 'WantedBy=multi-user.target' "$unit"
 check "manifest: apply uses reload-or-restart, not restart" grep -q 'reload-or-restart killswitch.service' "$REPO/system/killswitch/manifest"
 rules="$REPO/system/killswitch/files/etc/killswitch.nft"
-if nft -c -f "$rules" >/dev/null 2>&1 || unshare -rn nft -c -f "$rules" >/dev/null 2>&1; then
+# K5: also through sudo when that works without a prompt (sudo -n; run `sudo -v` first on the VM).
+if nft -c -f "$rules" >/dev/null 2>&1 || unshare -rn nft -c -f "$rules" >/dev/null 2>&1 \
+   || sudo -n nft -c -f "$rules" >/dev/null 2>&1; then
   pass "rules: nft accepts the syntax (nft -c)"
 elif ! command -v nft >/dev/null; then
   skip "rules syntax: no nft here"
 else
-  skip "rules syntax: nft -c needs root or a user namespace here (try: pkexec nft -c -f $rules)"
+  skip "rules syntax: nft -c needs root, a user namespace or cached sudo here (try: sudo -v, or pkexec nft -c -f $rules)"
 fi
 
 # K3: no plain UDP to 51820 (only packets with WireGuard's fwmark), no DNS outside the tunnel.
@@ -78,6 +83,48 @@ if systemctl is-active --quiet killswitch.service 2>/dev/null && ! ip -o link sh
     skip "live: no default route, router checks skipped"
   fi
   refute "live, VPN down: name lookup fails" timeout 5 getent hosts example.com
+
+  # K5, IPv6: the table is inet and output's policy is drop, so a global IPv6 send must fail with
+  # EPERM. ENETUNREACH means there's no IPv6 route, so the packet never reached the kill switch:
+  # that's a SKIP, not a pass. (On the VM: add a throwaway address and route first.)
+  v6=$(timeout 3 bash -c 'echo x >/dev/udp/2001:db8::1/9' 2>&1); v6rc=$?
+  case $v6 in
+    *"Operation not permitted"*) pass "live, VPN down: IPv6 to 2001:db8::1 blocked (EPERM)" ;;
+    *"unreachable"*|*"Cannot assign requested address"*)
+      skip "live IPv6: no IPv6 route or address here, so nothing reaches the kill switch ($(tail -n1 <<<"$v6"))" ;;
+    *) if ((v6rc == 0)); then fail "live, VPN down: IPv6 to 2001:db8::1 was sent (not blocked)"
+       else fail "live, VPN down: IPv6 send failed for another reason: $(tail -n1 <<<"$v6")"; fi ;;
+  esac
+
+  # K5, boot order: after a boot, the kill switch must be active before NetworkManager starts.
+  # If it started long after NetworkManager, it was started by hand or by an apply since boot.
+  ks=$(systemctl show -P ActiveEnterTimestampMonotonic killswitch.service 2>/dev/null)
+  nm=$(systemctl show -P ExecMainStartTimestampMonotonic NetworkManager.service 2>/dev/null)
+  if [[ ${ks:-0} == 0 || ${nm:-0} == 0 ]]; then
+    skip "live boot order: no NetworkManager start time here"
+  elif ((ks <= nm)); then
+    pass "live boot order: kill switch active before NetworkManager started"
+  elif ((ks - nm > 120000000)); then
+    skip "live boot order: kill switch started $(((ks - nm) / 1000000)) s after NetworkManager (by hand or an apply since boot; reboot and run again)"
+  else
+    fail "live boot order: kill switch active $(((ks - nm) / 1000000)) s after NetworkManager started"
+  fi
+
+  # K5, forward chain: a rootful container's traffic is forwarded (rootless podman goes through
+  # output instead, which the checks above already cover). Needs podman, sudo without a prompt
+  # and the image already pulled (the pull itself is blocked with the VPN down).
+  img=${KS_TEST_IMAGE:-docker.io/library/busybox:latest}
+  if command -v podman >/dev/null && sudo -n podman image exists "$img" 2>/dev/null; then
+    ctr() { sudo -n podman run --rm --network bridge "$img" "$@"; }
+    refute "live, container: TCP to 1.1.1.1:443 blocked (forward chain)" ctr timeout 5 nc 1.1.1.1 443 </dev/null
+    refute "live, container: DNS lookup via 9.9.9.9 blocked" ctr timeout 5 nslookup example.com 9.9.9.9
+    if [[ -n $gw ]]; then
+      refute "live, container: DNS lookup via the router ($gw) blocked" ctr timeout 5 nslookup example.com "$gw"
+      check "live, container: ping to the router ($gw) still allowed" ctr ping -c 1 -W 3 "$gw"
+    fi
+  else
+    skip "live container checks: need podman, sudo -n and the image $img pulled (run on the VM)"
+  fi
 else
   skip "live kill switch checks: service not active here, or a mv-* tunnel is up (run on the VM)"
 fi

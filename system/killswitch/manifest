@@ -1,6 +1,8 @@
 # shellcheck shell=bash disable=SC2034
 # VPN kill switch: only traffic through the mv-* WireGuard tunnels leaves the machine.
-# Captive portal? `systemctl stop killswitch`, log in, then `systemctl start killswitch`.
+# Captive portal (hotel Wi-Fi login page)? Schedule the restart first, then stop it, so it comes
+# back by itself even if you forget (and never stops if the scheduling fails):
+#   sudo systemd-run --on-active=5min systemctl start killswitch.service && sudo systemctl stop killswitch.service
 ROLES="personal"
 OS="any"
 CHECK="systemctl is-enabled --quiet killswitch.service && systemctl is-active --quiet killswitch.service"
