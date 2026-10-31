@@ -40,9 +40,9 @@ brew install chezmoi
 ```
 Log out and back in afterwards, so Flatpak apps show up in the app grid.
 
-**Live session or container (`install = dotfiles-only`):** only the chezmoi binary. Its install script checks the download's checksum.
+**Live session or container (`install = dotfiles-only`):** only the chezmoi binary. Its install script checks the download's checksum. Ubuntu's live session has `wget` but no `curl` or `git`; chezmoi clones with its built-in git.
 ```sh
-curl -fsLS -o /tmp/chezmoi-install.sh https://get.chezmoi.io
+wget -qO /tmp/chezmoi-install.sh https://get.chezmoi.io           # or: curl -fsLS -o /tmp/chezmoi-install.sh https://get.chezmoi.io
 less /tmp/chezmoi-install.sh       # read it first
 sh /tmp/chezmoi-install.sh -b "$HOME/.local/bin"
 export PATH="$HOME/.local/bin:$PATH"
@@ -72,6 +72,6 @@ pkexec ~/.local/share/chezmoi/system/install.sh --role "$role" --yes
 `sudo` works instead of `pkexec`. With `role = personal` this installs the kill switch, so **the internet is blocked until a `mv-*` WireGuard profile is connected**. Import the Mullvad profiles (step 3) before this step.
 
 ### 5. Check
-- `chezmoi diff` is empty, and `chezmoi doctor` shows no errors.
+- `chezmoi diff` is empty, and `chezmoi doctor` shows no errors. In a live session, its `source-dir`, `working-tree` (no git) and `hardlink` (`/tmp` on another filesystem) errors are expected.
 - Full installs: `system/install.sh --role "$role"` says `up to date` for every component.
 - Personal: with the VPN off nothing gets out (`curl -m 5 https://example.com` fails); with it on, everything works.
