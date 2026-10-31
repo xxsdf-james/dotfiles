@@ -27,8 +27,8 @@ A setup that is **portable, maintainable and reversible**, across:
 | CLI packages | Brewfile | nothing (role may add extras) |
 | GUI apps | Flatpak list | nothing (role may add extras) |
 | Desktop settings | dconf (GNOME, Ptyxis) | the desktop |
-| System layer | `install.sh`: kill switch, udev, SELinux | OS and role, personal only |
-| Containers | `distrobox.ini` | nothing |
+| System layer | `install.sh`: the kill switch | OS and role, personal only |
+| Containers | `distrobox.ini` (not yet) | nothing |
 
 Most of the repo **never branches**. Real differences are allowed in only two places: the system layer and the bootstrap.
 
@@ -64,7 +64,7 @@ Nothing else is a profile. A new axis needs a written reason in this file.
 4. **No apt or dnf in the repo**, except in the system layer. Brew and Flatpak names are the same everywhere.
 5. **Never run a default twice.** When the image already provides something (Bluefin starts Starship and sets brew's PATH), my copy runs only if it hasn't run yet. This is the lesson from bling.
 6. **Missing tools fail silently.** A live session without brew still gets a working shell.
-7. **Test the branches I don't use daily:** `chezmoi apply` in an Ubuntu distrobox (dotfiles-only) after changes, and a full VM restore now and then.
+7. **Test the branches I don't use daily:** `chezmoi apply` dotfiles-only in a plain Ubuntu container after changes (not distrobox: it shares the real `$HOME`), a live session now and then (it has no `curl` or `git`), and a full VM restore now and then.
 8. **Config goes in `~/.config` (XDG) wherever the program supports it natively, and in the home folder only where the program requires it.** No environment-variable redirection (`HISTFILE`, `DOCKER_CONFIG`, ...) just for tidiness. Stick to defaults where we can: `~/.bashrc.d` (Fedora's convention) and chezmoi's source in `~/.local/share/chezmoi` (XDG data) stay as they are.
 
 ## 6. Tool: chezmoi
