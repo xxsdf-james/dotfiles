@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Refuse a commit that contains a secret (backlog M0 G4, 2026-10-31): gitleaks checks the staged changes.
+# Required on every machine: no gitleaks installed = commit refused. The repo is public, so a commit
+# from anywhere (a live session too) is one push away from public history.
+# A false positive: add `gitleaks:allow` in a comment on that line. Read the finding before using --no-verify.
+set -euo pipefail
+PATH="$PATH:/home/linuxbrew/.linuxbrew/bin"   # GUI git clients may not have brew on PATH
+
+if ! command -v gitleaks >/dev/null 2>&1; then
+    echo "pre-commit: gitleaks not installed, commit refused." >&2
+    echo "  Install it (brew install gitleaks), or commit from a full install." >&2
+    echo "  To skip the check for one commit, on purpose: git commit --no-verify" >&2
+    exit 1
+fi
+
+if ! gitleaks git --pre-commit --staged --redact --no-banner --verbose; then
+    echo "pre-commit: possible secret in the staged changes (see above), commit refused" >&2
+    exit 1
+fi

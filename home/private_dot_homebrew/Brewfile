@@ -11,6 +11,7 @@ brew "bat"
 brew "chezmoi"
 brew "eza"
 brew "gh"
+brew "gitleaks"     # pre-commit secret check for this repo (.githooks)
 brew "neovim"
 brew "ripgrep"      # needed by the nvim config (Telescope live grep)
 brew "shellcheck"   # occasional: lints this repo's shell scripts

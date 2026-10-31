@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Turn on this repo's versioned git hooks (backlog M0 G4, 2026-10-31): the gitleaks pre-commit check.
+# The check is required on every machine; full installs get gitleaks from the Brewfile.
+set -euo pipefail
+repo={{ .chezmoi.workingTree | quote }}
+
+git -C "$repo" config core.hooksPath .githooks
+echo "git hooks: on for $repo (gitleaks pre-commit check, required)"
