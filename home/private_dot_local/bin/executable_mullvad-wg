@@ -19,7 +19,7 @@
 # <server> is a hostname from `relays`, e.g. ch-zrh-wg-001. The profile is named after it,
 # mv-<cc>-<city>-<NNN> (mv-ch-zrh-001): the name says which server, and the kill switch
 # only lets mv-* through. Which machine a device is for lives in the registry, not the name.
-# Profiles get autoconnect off, except the one imported with --boot.
+# Profiles get autoconnect off and are left disconnected, except the one imported with --boot.
 #
 # Secrets: the private key exists only in RAM ($XDG_RUNTIME_DIR) until NetworkManager stores
 # it (root-only); it's never on a command line or in a file on disk. The account number is
@@ -45,6 +45,31 @@ profile_of() {  # ch-zrh-wg-001 -> mv-ch-zrh-001
   echo "mv-${BASH_REMATCH[1]}-${BASH_REMATCH[2]}-${BASH_REMATCH[3]}"
 }
 nm_has() { nmcli -t -f NAME connection show | grep -qx "$1"; }
+# Adding a profile needs NetworkManager's settings.modify.system = yes. Checked before any key
+# or registration exists, so a refusal costs nothing. Strict on purpose: "auth" (polkit would
+# ask for a password) is refused too; loosen it here if a desktop session ever gets "auth".
+nm_can_modify() {  # nm_can_modify "<what the refusal leaves as it was>"
+  local action=org.freedesktop.NetworkManager.settings.modify.system perm
+  perm=$(nmcli -t -f PERMISSION,VALUE general permissions 2>/dev/null \
+    | awk -F: -v a="$action" '$1 == a {print $2}') || true
+  [[ $perm == yes ]] && return 0
+  {
+    echo "mullvad-wg: NetworkManager won't let this session add profiles, so this stopped first."
+    echo "  $1"
+    echo "  $action = ${perm:-(not readable)}"
+    case $perm in
+      auth) echo "  'auth': polkit would ask for a password, and this script needs 'yes'."
+            echo "  Usual cause: an SSH or other non-desktop session (no polkit agent to ask)." ;;
+      no)   echo "  'no': polkit refuses this user outright (a site policy or a polkit rule)." ;;
+      *)    echo "  Is NetworkManager running? Check: nmcli general status" ;;
+    esac
+    echo "  Fix: run this in a terminal in the machine's desktop session."
+    echo "  Check: nmcli general permissions | grep settings.modify.system"
+    echo "  If the desktop session also says 'auth', the check is stricter than needed: change"
+    echo "  nm_can_modify in the dotfiles repo (home/private_dot_local/bin/executable_mullvad-wg)."
+  } >&2
+  exit 1
+}
 
 # ── API ──────────────────────────────────────────────────────────────────────
 TOKEN=""
@@ -89,6 +114,7 @@ reg_ids() {  # reg_ids MACHINE [PROFILE] -> device ids
 cmd_keygen() {
   local profile=${1:-}; [[ -n $profile ]] || usage
   check_profile "$profile"
+  nm_can_modify "No key was made."
   nm_has "$profile" && die "NetworkManager already has a profile $profile"
   install -d -m 700 "$KEYS"
   [[ -e $KEYS/$profile.key ]] && die "a key for $profile is already waiting in $KEYS (import it, or delete it)"
@@ -111,6 +137,7 @@ cmd_import() {
   done
   [[ -n $profile && -n $pubkey && -n $addr && -n $peer && -n $endpoint ]] || die "incomplete peer-spec (copy the whole line from register)"
   check_profile "$profile"
+  nm_can_modify "The key is still waiting in $KEYS and the device is still registered; rerun this import once it's fixed."
   local key="$KEYS/$profile.key"
   [[ -f $key ]] || die "no key for $profile in $KEYS (run keygen on this machine first)"
   [[ $(wg pubkey <"$key") == "$pubkey" ]] || die "the peer-spec is for a different key than the one made here"
@@ -135,8 +162,10 @@ cmd_import() {
   ((rc == 0)) || die "nmcli import failed; the key is deleted, so run keygen again"
   local auto=no; ((boot)) && auto=yes
   nmcli connection modify "$profile" connection.autoconnect "$auto"
+  # Import brings the tunnel up at once (NM's default is autoconnect yes); only --boot keeps it up.
+  ((boot)) || nmcli connection down "$profile" >/dev/null 2>&1 || true
   echo "imported $profile (autoconnect $auto); the key is now only in NetworkManager"
-  echo "connect with: nmcli connection up $profile"
+  ((boot)) || echo "connect with: nmcli connection up $profile"
 }
 
 # ── account side ─────────────────────────────────────────────────────────────
@@ -241,6 +270,7 @@ cmd_add() {
   done
   [[ -n $server ]] || usage
   [[ -n $profile ]] || profile=$(profile_of "$server")
+  nm_can_modify "No key was made and nothing was registered at Mullvad."   # before keygen and register: no orphaned device
   local pub spec
   pub=$(cmd_keygen "$profile")
   token   # here, so the subshell below inherits it
