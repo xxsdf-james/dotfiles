@@ -8,11 +8,20 @@ if [ -z "${HOMEBREW_PREFIX:-}" ] && [ -x /home/linuxbrew/.linuxbrew/bin/brew ]; 
     PATH="$PATH:$HOMEBREW_PREFIX/bin:$HOMEBREW_PREFIX/sbin"
 fi
 
+# Bash completion itself. Fedora loads it from /etc/profile.d/bash_completion.sh;
+# Ubuntu loads it from its default ~/.bashrc, which this repo replaces (2026-10-31).
+if [ -z "${BASH_COMPLETION_VERSINFO:-}" ] && ! shopt -oq posix \
+    && [ -r /usr/share/bash-completion/bash_completion ]; then
+    . /usr/share/bash-completion/bash_completion
+fi
+
 # Completions for brew-installed tools
 # (from Bluefin /etc/profile.d/brew-bash-completion.sh, 2026-10-30).
 # Checks whether brew's own completion is loaded in this shell rather than
 # $BREW_BASH_COMPLETION, which Bluefin exports (same nested-shell issue as below).
-if ! complete -p brew >/dev/null 2>&1 && [ -d "${HOMEBREW_PREFIX:-}/etc/bash_completion.d" ]; then
+# Needs brew: with HOMEBREW_PREFIX empty the path would be /etc/bash_completion.d.
+if [ -n "${HOMEBREW_PREFIX:-}" ] && ! complete -p brew >/dev/null 2>&1 \
+    && [ -d "$HOMEBREW_PREFIX/etc/bash_completion.d" ]; then
     for rc in "$HOMEBREW_PREFIX"/etc/bash_completion.d/*; do
         [ -r "$rc" ] && . "$rc"
     done
