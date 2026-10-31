@@ -67,13 +67,14 @@ token() {  # call in the main shell: $(…) is a subshell and would lose TOKEN
 }
 api() {  # api METHOD PATH [JSON]; the token goes in through a curl config on a pipe, not argv
   [[ -n $TOKEN ]] || die "internal: token() not called"
-  local cfg=(--config <(printf 'header = "authorization: Bearer %s"\n' "$TOKEN"))
+  # The <(…) must be on the curl line itself: bash closes it when the command that made it ends.
   if [[ -n ${3:-} ]]; then
-    curl -fsS -X "$1" "${cfg[@]}" -H 'content-type: application/json' --data-binary @- "$API$2" <<<"$3"
+    curl -fsS -X "$1" --config <(auth_cfg) -H 'content-type: application/json' --data-binary @- "$API$2" <<<"$3"
   else
-    curl -fsS -X "$1" "${cfg[@]}" "$API$2"
+    curl -fsS -X "$1" --config <(auth_cfg) "$API$2"
   fi
 }
+auth_cfg() { printf 'header = "authorization: Bearer %s"\n' "$TOKEN"; }
 relays() { curl -fsS "$API/www/relays/wireguard/"; }
 
 # ── registry ─────────────────────────────────────────────────────────────────
@@ -162,7 +163,9 @@ cmd_register() {
   [[ -n $relay ]] || die "no active server '$server' (see: mullvad-wg relays)"
 
   token
-  [[ $(api GET /accounts/v1/accounts/me | jq -r .can_add_devices) == true ]] \
+  local me
+  me=$(api GET /accounts/v1/accounts/me) || die "Mullvad API call failed (account info)"
+  [[ $(jq -r .can_add_devices <<<"$me") == true ]] \
     || die "no free device slot on the account (see: mullvad-wg devices)"
   local dev
   dev=$(api POST /accounts/v1/devices "$(jq -nc --arg k "$pubkey" '{pubkey: $k, hijack_dns: false}')") \
@@ -177,7 +180,7 @@ cmd_register() {
 cmd_devices() {
   token
   local devs
-  devs=$(api GET /accounts/v1/devices)
+  devs=$(api GET /accounts/v1/devices) || die "Mullvad API call failed (device list)"
   {
     printf 'ID\tNAME\tCREATED\tMACHINE\tPROFILE\n'
     jq -r '.[] | [.id, .name, (.created[0:10]), .pubkey] | @tsv' <<<"$devs" \
@@ -206,12 +209,19 @@ cmd_remove() {
   ((${#ids[@]})) || die "nothing in the registry for ${machine}${profile:+ / $profile}"
 
   token
-  local id prof
+  local id prof devs
+  devs=$(api GET /accounts/v1/devices) || die "Mullvad API call failed (device list)"
   for id in "${ids[@]}"; do
     prof=""
     [[ -f $REGISTRY ]] && prof=$(awk -F'\t' -v id="$id" '$1 == id {print $4; exit}' "$REGISTRY")
-    if api DELETE "/accounts/v1/devices/$id" >/dev/null; then echo "removed device $id${prof:+ ($prof)} at Mullvad"
-    else echo "device $id: not found at Mullvad (already removed?)"; fi
+    # The registry line goes only once the device is gone at Mullvad, so a failed call keeps it.
+    if ! jq -e --arg id "$id" 'any(.[]; .id == $id)' <<<"$devs" >/dev/null; then
+      echo "device $id: not on the account (already removed)"
+    elif api DELETE "/accounts/v1/devices/$id" >/dev/null; then
+      echo "removed device $id${prof:+ ($prof)} at Mullvad"
+    else
+      die "removing device $id at Mullvad failed; registry kept"
+    fi
     reg_del "$id"
     if [[ -n $prof && $machine == "$(this_machine)" ]] && nm_has "$prof"; then
       nmcli connection delete "$prof" >/dev/null && echo "deleted NetworkManager profile $prof"
