@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# Test fake (tests/suites/20-mullvad-wg.sh). Logs to $FAKE.
+# Fake curl: reads --config like real curl (fails on a dead fd), routes the Mullvad API.
+method=GET cfg="" url="" data=""
+while (($#)); do case $1 in
+  -X) method=$2; shift 2;; --config) cfg=$2; shift 2;; -H) shift 2;;
+  --connect-timeout|--max-time|-o) echo "LIMIT: $1 $2" >>"$FAKE/argv.log"; shift 2;; -I) method=HEAD; shift;;
+  --data-binary) data=$(cat); shift 2;; -*) shift;; *) url=$1; shift;; esac; done
+echo "ARGV: $method $url" >>"$FAKE/argv.log"
+[[ ${FAKE_DOWN:-} == 1 ]] && { echo "curl: (28) Connection timed out after 10002 milliseconds" >&2; exit 28; }
+auth=""
+if [[ -n $cfg ]]; then
+  c=$(cat "$cfg" 2>/dev/null) || { echo "curl: cannot read config from '$cfg'" >&2; exit 26; }
+  [[ $c == *'Bearer tok123'* ]] && auth=ok
+fi
+need() { [[ $auth == ok ]] || { echo "curl: (22) 401" >&2; exit 22; }; }
+db=$FAKE/devices.json; [[ -f $db ]] || echo '[]' >"$db"
+case "$method $url" in
+  "HEAD https://api.mullvad.net/") exit 0;;
+  "GET https://api.mullvad.net/www/relays/wireguard/")
+    echo '[{"hostname":"ch-zrh-wg-001","active":true,"ipv4_addr_in":"193.32.127.66","pubkey":"SERVERPUBKEYxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx="}]';;
+  "POST https://api.mullvad.net/auth/v1/token")
+    [[ $(jq -r .account_number <<<"$data") == 1234567812345678 ]] && echo '{"access_token":"tok123"}' || exit 22;;
+  "GET https://api.mullvad.net/accounts/v1/accounts/me") need; echo '{"can_add_devices":true}';;
+  "GET https://api.mullvad.net/accounts/v1/devices") need; cat "$db";;
+  "POST https://api.mullvad.net/accounts/v1/devices") need
+    k=$(jq -r .pubkey <<<"$data")
+    n=$(( $(jq length "$db") + 1 ))
+    d=$(jq -nc --arg k "$k" --arg id "dev-$n" '{id:$id,name:"happy fox",pubkey:$k,ipv4_address:"10.64.1.2/32",ipv6_address:"fc00::2/128",created:"2026-10-31T00:00:00Z"}')
+    jq -c --argjson d "$d" '. + [$d]' "$db" >"$db.n" && mv "$db.n" "$db"; echo "$d";;
+  "DELETE https://api.mullvad.net/accounts/v1/devices/"*) need
+    id=${url##*/}; jq -c --arg id "$id" 'map(select(.id != $id))' "$db" >"$db.n" && mv "$db.n" "$db";;
+  *) echo "fake curl: no route $method $url" >&2; exit 22;;
+esac

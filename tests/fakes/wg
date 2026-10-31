@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Test fake (tests/suites/20-mullvad-wg.sh): a key is random text; its "public key" is a hash of it.
+case $1 in
+  genkey) head -c 32 /dev/urandom | base64 ;;
+  pubkey) printf '%s=\n' "$(sha256sum | head -c 43)" ;;
+  *) echo "fake wg: $*" >&2; exit 1 ;;
+esac

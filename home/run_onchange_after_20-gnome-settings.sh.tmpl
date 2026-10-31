@@ -1,15 +1,16 @@
+{{- /* Rendered empty without dconf or a desktop session (SSH, a container, a live session):
+     chezmoi neither runs nor records an empty script, so the next apply from a desktop
+     terminal loads the settings. A script that exited 0 there was recorded as done and never
+     ran again until the settings changed (backlog M3 K2; test: tests/suites/30-chezmoi.sh). */ -}}
+{{- if and (lookPath "dconf") (env "DBUS_SESSION_BUS_ADDRESS") -}}
 #!/usr/bin/env bash
 # Load my selected GNOME settings (docs/philosophy.md §7, "selected keys").
 # The settings live in .chezmoitemplates/gnome-settings.ini; they're embedded below,
 # so chezmoi re-runs this whenever they change.
 set -euo pipefail
 
-if ! command -v dconf >/dev/null 2>&1 || [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]; then
-    echo "gnome: no dconf or no desktop session, skipping" >&2
-    exit 0
-fi
-
 echo "gnome: loading selected settings"
 dconf load / <<'EOF'
 {{ include ".chezmoitemplates/gnome-settings.ini" }}
 EOF
+{{ end -}}

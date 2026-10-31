@@ -1,3 +1,7 @@
+{{- /* Rendered empty without brew: chezmoi neither runs nor records an empty script, so the
+     next apply after brew is installed runs it. A script that exited 0 there was recorded as
+     done and never ran again until a Brewfile changed (backlog M3 K2, same fix as 20-gnome). */ -}}
+{{- if stat "/home/linuxbrew/.linuxbrew/bin/brew" -}}
 #!/usr/bin/env bash
 # Install what the Brewfiles list (docs/philosophy.md §3). chezmoi re-runs this
 # whenever a Brewfile changes; the hashes below are what it watches.
@@ -9,10 +13,6 @@
 set -euo pipefail
 
 BREW=/home/linuxbrew/.linuxbrew/bin/brew
-if [ ! -x "$BREW" ]; then
-    echo "packages: brew not found, skipping (bootstrap installs it first)" >&2
-    exit 0
-fi
 
 # The VS Code cask (where the OS doesn't ship VS Code; see the Brewfile) is in a non-official
 # tap, which brew 7 only loads once trusted. On Linux `brew bundle` loads it before applying a
@@ -27,3 +27,4 @@ for f in "$HOME/.homebrew/Brewfile" "$HOME/.homebrew/Brewfile.personal"; do
     echo "packages: brew bundle --file=$f"
     "$BREW" bundle install --file="$f" --no-upgrade
 done
+{{ end -}}
