@@ -60,7 +60,7 @@ Nothing else is a profile. A new axis needs a written reason in this file.
 ## 5. Rules against profile rot
 1. **Detect facts, ask intent.**
 2. **Guards over branches.** A plain file with `command -v` checks beats a template with OS conditionals. Use templates only for values (an email address) and for skipping whole files (`.chezmoiignore`).
-3. **One git branch.** Differences are data, never per-OS branches.
+3. **One release branch, `main`.** OS differences live in templates and guards, never in branches. `next` exists only to test a change before it reaches `main`.
 4. **No apt or dnf in the repo**, except in the system layer. Brew and Flatpak names are the same everywhere.
 5. **Never run a default twice.** When the image already provides something (Bluefin starts Starship and sets brew's PATH), my copy runs only if it hasn't run yet. This is the lesson from bling.
 6. **Missing tools fail silently.** A live session without brew still gets a working shell.
