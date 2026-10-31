@@ -86,7 +86,7 @@ Nothing else is a profile. A new axis needs a written reason in this file.
 - **Bare git / yadm:** too little structure, and yadm's encrypted-archive habit is what leaked the SSH/GPG archive.
 - **Home Manager:** needs `/nix`, competes with brew, and isn't a boring core. Reconsider only if NixOS becomes the distro.
 
-**Bootstrap:** no `curl | sh`, except a downloaded, checksum-verified chezmoi release binary on a live session.
+**Tools and bootstrap** (framework rule 5, scope set 2026-10-31): the rule is about *tools*. Tools come from brew or Flatpak, never `curl | sh` or `pip --user`, and no installer edits rc files (use its `--no-modify-path` or equivalent). Bootstrapping a package manager or chezmoi itself is different: a script may do it when I know what it does (download it, read it, then run it; never pipe it into a shell) and it comes from the project's own source. Today that's brew's `install.sh` from github.com/Homebrew on Ubuntu, and chezmoi's from get.chezmoi.io on a live session (it checks the download's checksum).
 
 ## 7. The workflow, and the principle behind it
 **Edit the source → review the diff → apply.** Nothing on a machine is changed by hand and left there. A change I like goes into the repo (`chezmoi edit` / `chezmoi re-add`), and `chezmoi diff` should be empty on every machine.
@@ -118,5 +118,5 @@ From the 2026 cleanup plan (`~/Developer/claude-test/config-cleanup-plan.md`, "T
 - boring core, separate experiments
 - one tool per job
 - track intentions, not state
-- installers never edit rc files
+- installers never edit rc files; tools only through brew or Flatpak (bootstrap scripts excepted, see §6)
 - upstream default / upstream optional / mine
