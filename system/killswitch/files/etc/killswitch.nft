@@ -12,8 +12,18 @@ table inet killswitch {
 		oifname "lo" accept
 		oifname "mv-*" accept
 
-		# Encrypted WireGuard packets to the Mullvad server (port from your config)
-		udp dport 51820 accept
+		# DNS and DNS over TLS/QUIC only through the tunnel (above, via mv-*). Without this,
+		# lookups reach the router or any other server with the VPN down. Must stay before
+		# the LAN rule below. mDNS (5353, .local names) is not affected. DNS over HTTPS (443)
+		# can't be told apart from web traffic here; with the VPN down it's blocked anyway.
+		meta l4proto { tcp, udp } th dport { 53, 853 } drop
+
+		# Encrypted WireGuard packets: only those carrying a fwmark. The kernel marks
+		# WireGuard's own packets with the tunnel's fwmark, and only root can set a mark,
+		# so a normal program can't send plain UDP to port 51820 with the VPN down.
+		# NetworkManager picks the mark itself (wireguard.fwmark 0 = automatic), so any
+		# non-zero mark is accepted. Same idea as the kill switch example in `man wg-quick`.
+		meta mark != 0 udp dport 51820 accept
 
 		# DHCP / DHCPv6 / neighbour discovery
 		udp sport 68 udp dport 67 accept
@@ -30,6 +40,7 @@ table inet killswitch {
 
 		# Containers (Docker/Podman) may only reach the internet through the tunnel
 		oifname "mv-*" accept
+		meta l4proto { tcp, udp } th dport { 53, 853 } drop
 		ip daddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 } accept
 		ip6 daddr { fe80::/10, fc00::/7 } accept
 		oifname "wl*" drop
