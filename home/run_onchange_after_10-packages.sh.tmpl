@@ -14,6 +14,14 @@ if [ ! -x "$BREW" ]; then
     exit 0
 fi
 
+# The VS Code cask (where the OS doesn't ship VS Code; see the Brewfile) is in a non-official
+# tap, which brew 7 only loads once trusted. On Linux `brew bundle` loads it before applying a
+# Brewfile `trusted: true` (brew 7.0.11), so trust that one cask here, not the whole tap.
+if [ ! -x /usr/bin/code ]; then
+    "$BREW" tap ublue-os/tap
+    "$BREW" trust --cask ublue-os/tap/visual-studio-code-linux
+fi
+
 for f in "$HOME/.homebrew/Brewfile" "$HOME/.homebrew/Brewfile.personal"; do
     [ -f "$f" ] || continue
     echo "packages: brew bundle --file=$f"
