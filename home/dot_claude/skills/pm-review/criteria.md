@@ -1,6 +1,6 @@
 # Criteria
 
-Three lenses. Lens A (the AI-Native SDLC Playbook) is the main structure; B and C refer back to it where they overlap. Ratings: **Strong**, **Adequate**, **Needs work**, **N/A**. For each criterion: what good looks like, the evidence to check, and red flags.
+Three lenses: IDs S1–S10, B1–B9 and C1… are used in the report. Lens A (the AI-Native SDLC Playbook) is the main structure; B and C refer back to it where they overlap. Ratings: **Strong**, **Adequate**, **Needs work**, **N/A**. For each criterion: what good looks like, the evidence to check, and red flags.
 
 ## Lens A: AI-Native SDLC Playbook
 
@@ -56,17 +56,19 @@ Three lenses. Lens A (the AI-Native SDLC Playbook) is the main structure; B and 
 
 ## Lens B: classic project management
 
-1. **Goal and scope control.** A clear goal and a boundary. New work goes to a backlog unless it's on the critical path. Red flags: a growing "later" list with no limit; side features inside a test step.
-2. **Sequencing and the critical path.** Dependencies are ordered, and risky exposure comes after its safeguards. Red flag: something goes public before its hardening.
-3. **Status visibility.** The current state and the next action can be found in under a minute. Red flags: dense paragraphs; mixed done and next items; struck-through text.
-4. **Definition of done.** Every task or milestone has a written done-check that gets ticked off. Red flag: a "verify" list that is never closed.
-5. **Risk management.** A register with each risk, its owner, a date and its status. Known risks are scheduled. Red flag: risks recorded in prose and never scheduled.
-6. **Change control and reversibility.** Backups before destructive steps, scripts that don't depend on prompts, snapshots, the ability to undo.
-7. **Continuity between sessions.** A new session (or a new person) can resume from the docs, and the docs match reality. Check for stale lines and cite `file:line`.
-8. **Decision records.** Decisions are dated, with the reason and the alternatives turned down.
-9. **Pace and sustainability.** Milestones, time limits and a load the people involved can keep up.
+B1. **Goal and scope control.** A clear goal and a boundary. New work goes to a backlog unless it's on the critical path. Red flags: a growing "later" list with no limit; side features inside a test step.
+B2. **Sequencing and the critical path.** Dependencies are ordered, and risky exposure comes after its safeguards. Red flag: something goes public before its hardening.
+B3. **Status visibility.** The current state and the next action can be found in under a minute. Red flags: dense paragraphs; mixed done and next items; struck-through text.
+B4. **Definition of done.** Every task or milestone has a written done-check that gets ticked off. Red flag: a "verify" list that is never closed.
+B5. **Risk management.** A register with each risk, its owner, a date and its status. Known risks are scheduled. Red flag: risks recorded in prose and never scheduled.
+B6. **Change control and reversibility.** Backups before destructive steps, scripts that don't depend on prompts, snapshots, the ability to undo.
+B7. **Continuity between sessions.** A new session (or a new person) can resume from the docs, and the docs match reality. Check for stale lines and cite `file:line`.
+B8. **Decision records.** Decisions are dated, with the reason and the alternatives turned down.
+B9. **Pace and sustainability.** Milestones, time limits and a load the people involved can keep up.
 
 ## Lens C: working with AI
+
+Number the rows you score C1, C2, … in the order you use them (one row per framework area).
 
 **AI Fluency 4D**
 - *Delegation:* the right split between human and AI; credentials and judgement calls stay with the human.

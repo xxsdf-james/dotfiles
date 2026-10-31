@@ -1,37 +1,69 @@
 # Report shape
 
-Write plain, direct sentences. Use tables for the scorecards. Cite evidence inline (`file:line`, a short commit hash, counts).
+The report is read in a Markdown viewer or a terminal. Keep table cells short so the rows don't wrap into a mess, and put the detail in an evidence list under each table.
+
+**Rules**
+- **Table cells:** the "Key point" column has at most 12 words, and no other cell holds a sentence. No `file:line`, hashes or quotes in tables; those go in the evidence lists.
+- **Evidence lists:** one bullet per row, in the same order as the table, starting with the row's ID in bold. Each bullet has 1–3 short sentences with `file:line`, hashes and counts.
+- **Summary:** at most about 15 lines. It must make sense to someone who reads nothing else.
+- Write plain, direct sentences, and don't repeat the same finding in several sections. Cross-refer by ID (e.g. "see S6").
 
 ```markdown
-# Project review: <project name> (<period covered>)
+# Project review: <project name>
 
-**Verdict:** <2–3 sentences: overall rating, the main strength, the main weakness.>
+_<period covered> · reviewed <date> · scope: <paths reviewed>_
+
+## Summary
+**Overall: <Strong | Adequate | Needs work>.** <1–2 sentences: the main strength and the main weakness.>
+
 Tally: N Strong · N Adequate · N Needs work · N N/A
 
+**Biggest gap:** <2–3 sentences: what it is, why it carries the most risk, and the rule it breaks.>
+
+**Do first:**
+1. <action> (fixes <IDs>)
+2. <action> (fixes <IDs>)
+3. <action> (fixes <IDs>)
+
 ## 1. Criteria
-<List the three lenses and their criteria (IDs and names only), and the rating scale.
-Note any criteria marked N/A, and why.>
+- **Lens A, AI-Native SDLC Playbook:** S1 … S10 (names only)
+- **Lens B, project management:** B1 … B9
+- **Lens C, working with AI:** the frameworks and areas used
+- **Scale:** Strong / Adequate / Needs work / N/A
+- **N/A:** <which, and why, or "none">
 
-## 2. Scorecard: AI-Native SDLC Playbook
-| # | Criterion | Rating | Evidence |
+## 2. AI-Native SDLC Playbook
+| # | Criterion | Rating | Key point |
 |---|---|---|---|
-| S1 | ... | Strong / Adequate / Needs work / N/A | ... |
+| S1 | Committed files | Needs work | Plan and scripts aren't under version control |
 
-> **Biggest gap:** <one finding, why it carries the most risk, and the playbook rule it breaks.>
+**Evidence**
+- **S1:** <1–3 sentences with file:line, hashes, counts.>
 
-## 3. Scorecard: project management
-| # | Criterion | Rating | Finding |
+## 3. Project management
+| # | Criterion | Rating | Key point |
+|---|---|---|---|
+
+**Evidence**
+- **B1:** …
 
 ## 4. Working with AI
-| Framework | Area | Rating | Notes |
+| # | Framework: area | Rating | Key point |
+|---|---|---|---|
+| C1 | 4D: Delegation | Strong | … |
 
-## 5. Recommendations (most urgent first)
-1. **<Action>.** <What, where, and which finding it fixes.>
+**Evidence**
+- **C1:** …
+
+## 5. Recommendations
+1. **<Action>.** <What and where, in 1–2 sentences.> Fixes <IDs>.
 ...
 
 ## Limits
-<What couldn't be checked ("not confirmed"), what assumptions were made, and that nothing was changed.>
+- **Not confirmed:** <what couldn't be checked, and why>
+- **Assumptions:** <…>
+- Nothing was changed.
 
 ## Sources
-<From sources.md: only the frameworks actually used.>
+- <only the frameworks actually used, from sources.md>
 ```
