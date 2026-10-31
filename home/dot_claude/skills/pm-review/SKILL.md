@@ -26,21 +26,14 @@ Write the returned report, unchanged, to `<folder>/<repo folder name>-<date>.md`
 1. If the environment variable `PM_REVIEW_DIR` is set (check it with Bash: `printenv PM_REVIEW_DIR`), use it. Each machine sets this to wherever it wants reviews kept.
 2. Otherwise, use the `pm-reviews` folder inside Claude Code's config folder, next to this skill's own install folder. That's `~/.claude/pm-reviews` on Linux and macOS and `%USERPROFILE%\.claude\pm-reviews` on Windows. It exists on every machine that can run this skill, and its name is the same in every OS language.
 
-Resolve the folder to an absolute path, because the file tools don't expand `~`. Never write into the reviewed repo, so that a review can't be committed by accident. If the file already exists, add `-2`, `-3` and so on. Create the folder if it's missing, and **note whether you created the default folder in this run**; step 4 needs that. If the write is refused, save the report to the session's scratchpad instead and say where it went.
+Resolve the folder to an absolute path, because the file tools don't expand `~`. Never write into the reviewed repo, so that a review can't be committed by accident. If the file already exists, add `-2`, `-3` and so on. Create the folder if it's missing, and **note whether you created the default folder in this run**; step 3 needs that. If the write is refused, save the report to the session's scratchpad instead and say where it went.
 
 Never ask anything before the review or before saving. The review must also work where nobody can answer (`claude -p`, scripts, test runs).
 
-## 3. Report back
-In the chat, show only:
-- the report's **Summary** section, copied as it is
-- the saved file's full path
-
-Don't repeat the scorecards in the chat. They're in the file.
-
-## 4. First review on this machine: offer a folder choice once
+## 3. First review on this machine: offer a folder choice once
 Do this step only if **all** of these are true:
 - `PM_REVIEW_DIR` was not set
-- you created the default folder in this run, which means this is the first review on this machine
+- you created the default folder in this run (step 2), which means this is the first review on this machine
 - the session is interactive. In `claude -p`, scripts and test runs, skip this step.
 
 Then ask the user once, with AskUserQuestion: keep reports in the default folder (give its full path; make this the first option), or use another folder. Explain that it's a one-time question for this machine.
@@ -52,3 +45,10 @@ Then ask the user once, with AskUserQuestion: keep reports in the default folder
   3. Tell the user the setting applies from the next session.
 
   If the user declines the settings edit, leave the report where it is and tell them how to set `PM_REVIEW_DIR` themselves.
+
+## 4. Report back (always last)
+End your turn with one message that contains only:
+- the report's whole `## Summary` section, pasted word for word as Markdown: the overall rating, the tally, the biggest gap and the "Do first" list
+- the saved file's full path (and the second copy's path if step 3 moved it)
+
+Paste the Summary; don't summarise it. No one-line recap, no rewording, no shortening: the user reads it in the terminal instead of opening the file. Don't repeat the scorecards. They're in the file.
