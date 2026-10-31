@@ -73,6 +73,22 @@ nm_can_modify() {  # nm_can_modify "<what the refusal leaves as it was>"
 
 # ── API ──────────────────────────────────────────────────────────────────────
 TOKEN=""
+# Time limits on every call: with the kill switch on and no tunnel, packets are dropped, and
+# curl would otherwise wait minutes before failing.
+CURL=(curl -fsS --connect-timeout 10 --max-time 30)
+need_api() {  # call in the main shell before anything that talks to Mullvad
+  local rc=0
+  curl -sS -o /dev/null -I --connect-timeout 10 --max-time 20 "$API/" 2>/dev/null || rc=$?
+  ((rc == 0)) && return 0
+  {
+    echo "mullvad-wg: can't reach ${API#https://} (curl exit $rc), so this stopped first."
+    echo "  Kill switch on and no VPN up? Check: systemctl is-active killswitch"
+    echo "  and: nmcli -t -f NAME connection show --active | grep '^mv-'"
+    echo "  On a new machine, set up Mullvad before the system layer (README step 3),"
+    echo "  or bring up an existing mv- profile first."
+  } >&2
+  exit 1
+}
 token() {  # call in the main shell: $(…) is a subshell and would lose TOKEN
   [[ -n $TOKEN ]] && return
   local a=${MULLVAD_ACCOUNT:-}
@@ -85,7 +101,7 @@ token() {  # call in the main shell: $(…) is a subshell and would lose TOKEN
   [[ $a =~ ^[0-9]{16}$ ]] || die "not a 16-digit account number (copy it from KeePassXC first, or check MULLVAD_ACCOUNT)"
   # printf is a shell builtin, so the number never appears in a process's arguments.
   TOKEN=$(printf '{"account_number":"%s"}' "$a" \
-    | curl -fsS -X POST -H 'content-type: application/json' --data-binary @- "$API/auth/v1/token" \
+    | "${CURL[@]}" -X POST -H 'content-type: application/json' --data-binary @- "$API/auth/v1/token" \
     | jq -r '.access_token // empty') || true
   unset a
   [[ -n $TOKEN ]] || die "login failed (wrong account number?)"
@@ -94,13 +110,13 @@ api() {  # api METHOD PATH [JSON]; the token goes in through a curl config on a 
   [[ -n $TOKEN ]] || die "internal: token() not called"
   # The <(…) must be on the curl line itself: bash closes it when the command that made it ends.
   if [[ -n ${3:-} ]]; then
-    curl -fsS -X "$1" --config <(auth_cfg) -H 'content-type: application/json' --data-binary @- "$API$2" <<<"$3"
+    "${CURL[@]}" -X "$1" --config <(auth_cfg) -H 'content-type: application/json' --data-binary @- "$API$2" <<<"$3"
   else
-    curl -fsS -X "$1" --config <(auth_cfg) "$API$2"
+    "${CURL[@]}" -X "$1" --config <(auth_cfg) "$API$2"
   fi
 }
 auth_cfg() { printf 'header = "authorization: Bearer %s"\n' "$TOKEN"; }
-relays() { curl -fsS "$API/www/relays/wireguard/"; }
+relays() { "${CURL[@]}" "$API/www/relays/wireguard/"; }
 
 # ── registry ─────────────────────────────────────────────────────────────────
 reg_add() { install -d -m 700 "$STATE"; ( umask 077; printf '%s\n' "$(IFS=$'\t'; echo "$*")" >>"$REGISTRY" ); }
@@ -187,6 +203,7 @@ cmd_register() {
   check_profile "$profile"
   [[ -n $(reg_ids "$machine" "$profile") ]] && die "$machine already has a device for $profile (remove it first)"
 
+  need_api
   local relay
   relay=$(relays | jq -c --arg h "$server" '.[] | select(.hostname == $h and .active)')
   [[ -n $relay ]] || die "no active server '$server' (see: mullvad-wg relays)"
@@ -207,6 +224,7 @@ cmd_register() {
 }
 
 cmd_devices() {
+  need_api
   token
   local devs
   devs=$(api GET /accounts/v1/devices) || die "Mullvad API call failed (device list)"
@@ -237,6 +255,7 @@ cmd_remove() {
   else usage; fi
   ((${#ids[@]})) || die "nothing in the registry for ${machine}${profile:+ / $profile}"
 
+  need_api
   token
   local id prof devs
   devs=$(api GET /accounts/v1/devices) || die "Mullvad API call failed (device list)"
@@ -271,6 +290,7 @@ cmd_add() {
   [[ -n $server ]] || usage
   [[ -n $profile ]] || profile=$(profile_of "$server")
   nm_can_modify "No key was made and nothing was registered at Mullvad."   # before keygen and register: no orphaned device
+  need_api
   local pub spec
   pub=$(cmd_keygen "$profile")
   token   # here, so the subshell below inherits it
@@ -280,6 +300,7 @@ cmd_add() {
 }
 
 cmd_relays() {
+  need_api
   relays | jq -r --arg f "${1:-}" '.[] | select(.active and (.hostname | contains($f)))
     | "\(.hostname)\t\(.city_name), \(.country_name)\t\(.provider)\(if .owned then " (owned)" else "" end)"' \
     | column -t -s $'\t'
