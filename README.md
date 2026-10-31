@@ -8,10 +8,17 @@ My Linux config, managed with [chezmoi](https://chezmoi.io). It isn't tied to a 
 - `system/`: files for `/etc`, one folder per component, installed by `system/install.sh` (usage in its header)
 
 ## Daily use
-- `chezmoi edit <file>` → `chezmoi diff` → `chezmoi apply`
-- Changed a file in place? `chezmoi re-add <file>`, then review with `chezmoi cd && git diff`.
+Every machine tracks `main` and never applies untested changes.
+- Get the latest release: `chezmoi update`.
 - `chezmoi diff` should be empty on every machine.
-- Publish a change: `chezmoi git -- push`. The repo is public: never commit a secret, because history keeps it.
+
+## Making a change
+1. Edit in a separate working clone on `next` (e.g. `~/Developer/dotfiles`; set `git config core.hooksPath .githooks` there), not in `~/.local/share/chezmoi`. Commit and push `next`. The repo is public: never commit a secret, because history keeps it.
+2. Test on a VM from `next`: `chezmoi init --apply --branch next xxsdf-james`, then the tests.
+3. Open a pull request from `next` into `main`. Its description carries the test results: which VM, which tests, pass or fail. Merge with "Create a merge commit".
+4. On each machine: `chezmoi update`.
+
+Fixes and reverts take the same path. Changed a file in place on a machine? Copy it into the working clone and go through the steps above; don't `chezmoi re-add` on a machine.
 
 ## Restore on a new machine
 `chezmoi init` asks three questions once per machine:
