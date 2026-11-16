@@ -27,6 +27,7 @@ cask "font-symbols-only-nerd-font" unless File.exist?("/usr/share/fonts/nerd-fon
 # --- GUI: everyday ---
 flatpak "com.brave.Browser"
 flatpak "org.keepassxc.KeePassXC"
+flatpak "org.cryptomator.Cryptomator"   # encrypted folder in Google Drive (2026-11-16, W4)
 flatpak "md.obsidian.Obsidian"
 flatpak "org.libreoffice.LibreOffice"
 flatpak "org.mozilla.thunderbird_esr"

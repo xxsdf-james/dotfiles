@@ -1,0 +1,220 @@
+#!/usr/bin/env bash
+# drive-sync: two-way sync of ~/Drive with Google Drive (gdrive:Sync) via rclone bisync.
+# Personal laptop only (Bluefin has no Google Drive client); the work laptop uses Drive for desktop.
+#
+# Dry run by default; --yes applies. Flags only, no prompts.
+#   drive-sync                         dry run of a normal sync
+#   drive-sync --resync                dry run of the first sync
+#   drive-sync --resync --yes          first sync (once, or after bisync asks for it)
+#   drive-sync --yes                   normal sync (what the timer runs)
+#   drive-sync --install-timer         show the systemd user units; with --yes, install and start them
+#   drive-sync --status                timer state, last log lines, conflict copies
+# Options: --local PATH (default ~/Drive), --remote REMOTE (default gdrive:Sync),
+#          --no-systemctl (write units but don't call systemctl; for tests)
+#
+# Prerequisite (the user, once, in a real terminal, never through Claude): an rclone remote "gdrive"
+# (type drive, scope drive) with your own OAuth client; rclone's shared client is retired in 2026.
+# While that client is in Testing mode, the login expires weekly: `rclone config reconnect gdrive:`.
+# Never: stores tokens, merges conflicts, touches anything outside LOCAL, the remote path and its own state.
+# Origin: claude-test W4, 2026-11-16.
+set -euo pipefail
+
+YES=0 RESYNC=0 ACTION=sync NO_SYSTEMCTL=0
+LOCAL="${HOME}/Drive"
+REMOTE="gdrive:Sync"
+STATE="${XDG_STATE_HOME:-$HOME/.local/state}/drive-sync"
+UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+SELF="$(realpath "$0")"
+
+usage() { sed -n '2,/^[^#]/p' "$SELF" | sed '$d; s/^# \{0,1\}//'; }
+die() { echo "ERROR: $*" >&2; exit 1; }
+log() { mkdir -p "$STATE"; printf '%s %s\n' "$(date '+%F %T')" "$*" | tee -a "$STATE/sync.log"; }
+
+parse_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --yes) YES=1 ;;
+      --resync) RESYNC=1 ;;
+      --install-timer) ACTION=timer ;;
+      --status) ACTION=status ;;
+      --no-systemctl) NO_SYSTEMCTL=1 ;;
+      --local) [[ $# -ge 2 ]] || die "--local needs a path"; LOCAL="$2"; shift ;;
+      --remote) [[ $# -ge 2 ]] || die "--remote needs a value"; REMOTE="$2"; shift ;;
+      -h|--help) usage; exit 0 ;;
+      *) die "unknown flag: $1 (see --help)" ;;
+    esac
+    shift
+  done
+}
+
+check_tools() {
+  command -v rclone >/dev/null || die "rclone not found"
+  local v; v="$(rclone version | sed -n '1s/^rclone v\([0-9]*\.[0-9]*\).*/\1/p')"
+  [[ -n "$v" ]] || die "can't read the rclone version"
+  local major="${v%%.*}" minor="${v#*.}"
+  (( major > 1 || (major == 1 && minor >= 66) )) || die "rclone $v is too old (need 1.66+ for --resilient/--recover)"
+}
+
+check_paths() {
+  [[ -n "$LOCAL" ]] || die "--local is empty"
+  [[ "$LOCAL" == /* ]] || die "--local must be an absolute path: $LOCAL"
+  local l; l="$(realpath -m "$LOCAL")"
+  [[ "$l" != "/" && "$l" != "$(realpath -m "$HOME")" ]] || die "refusing to sync $l (must be a dedicated folder, not / or ~)"
+  LOCAL="$l"
+  [[ -n "$REMOTE" && "$REMOTE" != *":" ]] || die "--remote must name a folder, not a whole drive: '$REMOTE'"
+}
+
+check_remote() {
+  if [[ "$REMOTE" == /* ]]; then
+    # a local path standing in for Drive (tests)
+    [[ -d "$REMOTE" ]] && return 0
+  else
+    local name="${REMOTE%%:*}:"
+    rclone listremotes | grep -qxF "$name" || die "rclone remote '$name' not found; run: rclone config (as the user)"
+    rclone lsf --max-depth 1 "$REMOTE" >/dev/null 2>&1 && return 0
+    rclone lsf --max-depth 1 "${REMOTE%%:*}:" >/dev/null 2>&1 || die "can't reach '$name' (network or login?)"
+  fi
+  # remote reachable but folder missing
+  if (( YES )); then log "creating $REMOTE"; rclone mkdir "$REMOTE"
+  else echo "DRY RUN: would create $REMOTE"; return 1; fi
+}
+
+write_filters() {
+  mkdir -p "$STATE"
+  local f="$STATE/filters.txt" tmp
+  tmp="$(mktemp)"
+  cat > "$tmp" <<'EOF'
+# drive-sync filters (written by drive-sync; changing them needs --resync)
+- .obsidian/workspace*.json
+- .obsidian/cache
+- .trash/**
+- *.tmp
+- ~$*
+- .~lock.*#
+- .DS_Store
+- desktop.ini
+- .directory
+EOF
+  if ! cmp -s "$tmp" "$f" 2>/dev/null; then
+    if [[ -f "$f" ]] && (( ! RESYNC )); then
+      rm -f "$tmp"; die "filters changed since the last run; run with --resync"
+    fi
+    mv "$tmp" "$f"
+  else rm -f "$tmp"; fi
+  FILTERS="$f"
+}
+
+common_flags() {
+  local -n _out=$1
+  _out=(--workdir "$STATE/bisync" --filters-file "$FILTERS"
+        --create-empty-src-dirs --resilient --recover --max-lock 2m
+        --conflict-resolve none --conflict-loser num --conflict-suffix conflict
+        --compare size,modtime --drive-skip-gdocs -v)
+  (( YES )) || _out+=(--dry-run)
+}
+
+run_bisync() {
+  local flags=(); common_flags flags
+  (( RESYNC )) && flags+=(--resync --resync-mode newer)
+  local mode; mode=$([[ $YES == 1 ]] && echo APPLY || echo "DRY RUN")
+  log "$mode: bisync $LOCAL <-> $REMOTE$([[ $RESYNC == 1 ]] && echo ' (resync)')"
+  set +e
+  rclone bisync "$LOCAL" "$REMOTE" "${flags[@]}" 2>&1 | tee -a "$STATE/sync.log"
+  local rc=${PIPESTATUS[0]}
+  set -e
+  if (( rc != 0 )); then
+    if (( ! RESYNC )) && grep -q 'resync' <(tail -n 20 "$STATE/sync.log"); then
+      log "bisync needs a first sync: run with --resync (dry run first)"
+    fi
+    log "bisync failed (exit $rc)"; return "$rc"
+  fi
+  log "bisync done"
+}
+
+sync_action() {
+  if [[ ! -d "$LOCAL" ]]; then
+    if (( YES )); then log "creating $LOCAL"; mkdir -p "$LOCAL"
+    else echo "DRY RUN: would create $LOCAL (run with --yes); nothing to compare yet"; return 0; fi
+  fi
+  check_remote || { echo "DRY RUN: stopping; the remote folder doesn't exist yet"; return 0; }
+  write_filters
+  run_bisync
+  report_conflicts
+}
+
+report_conflicts() {
+  local found
+  found="$( { find "$LOCAL" -name '*.conflict[0-9]*' 2>/dev/null
+              rclone lsf -R --files-only --include '*.conflict[0-9]*' "$REMOTE" 2>/dev/null | sed "s|^|$REMOTE/|"; } || true)"
+  if [[ -n "$found" ]]; then
+    echo "CONFLICT COPIES (merge by hand; kdbx: KeePassXC Database > Merge, then delete the copy):"
+    echo "$found" | sed 's/^/  /'
+  fi
+}
+
+unit_text() {
+  case "$1" in
+    service) cat <<EOF
+[Unit]
+Description=Two-way sync of $LOCAL with $REMOTE (rclone bisync)
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=$SELF --yes --local $LOCAL --remote $REMOTE
+EOF
+    ;;
+    timer) cat <<'EOF'
+[Unit]
+Description=Run drive-sync every 15 minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=15min
+
+[Install]
+WantedBy=timers.target
+EOF
+    ;;
+  esac
+}
+
+install_timer() {
+  local u
+  for u in service timer; do
+    if (( YES )); then
+      mkdir -p "$UNIT_DIR"; unit_text "$u" > "$UNIT_DIR/drive-sync.$u"; log "wrote $UNIT_DIR/drive-sync.$u"
+    else
+      echo "DRY RUN: would write $UNIT_DIR/drive-sync.$u:"; unit_text "$u" | sed 's/^/  | /'
+    fi
+  done
+  if (( YES && ! NO_SYSTEMCTL )); then
+    systemctl --user daemon-reload
+    systemctl --user enable --now drive-sync.timer
+    log "timer enabled"
+  elif (( ! YES )); then
+    echo "DRY RUN: would run: systemctl --user daemon-reload && systemctl --user enable --now drive-sync.timer"
+  fi
+}
+
+status() {
+  if (( ! NO_SYSTEMCTL )); then
+    systemctl --user list-timers drive-sync.timer --no-pager 2>/dev/null || echo "timer: not installed"
+  fi
+  echo "--- last log lines ($STATE/sync.log)"
+  tail -n 15 "$STATE/sync.log" 2>/dev/null || echo "(no log yet)"
+  [[ -d "$LOCAL" ]] && report_conflicts || true
+}
+
+main() {
+  parse_args "$@"
+  check_tools
+  check_paths
+  case "$ACTION" in
+    sync) sync_action ;;
+    timer) install_timer ;;
+    status) status ;;
+  esac
+}
+
+main "$@"
