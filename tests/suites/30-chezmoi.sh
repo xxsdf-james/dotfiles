@@ -68,5 +68,9 @@ else
   pass "interactive bash starts clean"
 fi
 # nvim may come from brew, which .bashrc.d puts on PATH: ask the shell itself.
-if grep -qx 'NVIM=' <<<"$sh_out"; then want=EDITOR=; else want=EDITOR=nvim; fi
-check "EDITOR is nvim only where nvim is installed (bcbd2e6): $want" grep -qx "$want" <<<"$sh_out"
+# Without nvim, EDITOR is whatever the system sets (Bluefin 44.20261029 sets nano), just never nvim.
+if grep -qx 'NVIM=' <<<"$sh_out"; then
+  refute "EDITOR is nvim only where nvim is installed (bcbd2e6): no nvim, EDITOR isn't nvim" grep -qx 'EDITOR=nvim' <<<"$sh_out"
+else
+  check "EDITOR is nvim only where nvim is installed (bcbd2e6): EDITOR=nvim" grep -qx 'EDITOR=nvim' <<<"$sh_out"
+fi

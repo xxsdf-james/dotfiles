@@ -7,8 +7,10 @@ v=$(rclone version | sed -n '1s/^rclone v\([0-9]*\)\.\([0-9]*\).*/\1 \2/p')
 read -r maj min <<<"$v"
 (( maj > 1 || (maj == 1 && min >= 66) )) || { skip "whole suite: rclone $maj.$min < 1.66"; exit 0; }
 
-S="$REPO/home/private_dot_local/bin/executable_drive-sync"
 T="$WORK"
+# An executable copy under the same name: the chezmoi source has no exec bit, and systemd-analyze checks it.
+mkdir -p "$T/src"; cp "$REPO/home/private_dot_local/bin/executable_drive-sync" "$T/src/"; chmod +x "$T/src/executable_drive-sync"
+S="$T/src/executable_drive-sync"
 export XDG_STATE_HOME="$T/state" XDG_CONFIG_HOME="$T/config"
 L="$T/local" R="$T/remote"
 # A fake notify-send for the whole suite: records calls, never touches the real desktop.
@@ -75,10 +77,12 @@ bash "$S" --local "" --remote "$R" >"$T/out" 2>&1; check "7 refuses empty" test 
 bash "$S" --local relative --remote "$R" >"$T/out" 2>&1; check "7 refuses relative path" test $? -ne 0
 bash "$S" --local "$L" --remote "gdrive:" >"$T/out" 2>&1; check "7 refuses a whole drive" test $? -ne 0
 
-# 8. missing rclone remote: clear message, nothing created
+# 8. missing rclone remote: clear message, nothing created, error in the log (the timer has no terminal)
 bash "$S" --local "$T/new" --remote "nosuchremote:Sync" --yes >"$T/out" 2>&1; rc=$?
 check "8 missing remote fails" test $rc -ne 0
 check "8 ... says to run rclone config" grep -q 'rclone config' "$T/out"
+check "8 ... creates no local folder" test ! -e "$T/new"
+check "8 ... logs the error" grep -q "ERROR: rclone remote 'nosuchremote:' not found" "$XDG_STATE_HOME/drive-sync/sync.log"
 
 # 9. dry run with a missing local folder creates nothing
 bash "$S" --local "$T/absent" --remote "$R" >"$T/out" 2>&1
