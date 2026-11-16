@@ -39,5 +39,19 @@ jobs:
       - name: Install nftables, jq
         run: sudo apt-get update -qq && sudo apt-get install -y -qq nftables jq
 
+      # drive-sync's suite needs rclone >= 1.66 (Ubuntu 24.04 has 1.60). Same version as the laptop;
+      # checksum matched on downloads.rclone.org and the GitHub release (2026-11-16).
+      - name: Install rclone
+        env:
+          VERSION: 1.75.2
+          SHA256: 349ac8fba6ff65d6247043f1750cdcb518ec5d500ef91463a10d37c0ccdf3702
+        run: |
+          zip="rclone-v${VERSION}-linux-amd64.zip"
+          curl -fsSLo "$RUNNER_TEMP/$zip" "https://github.com/rclone/rclone/releases/download/v${VERSION}/$zip"
+          echo "$SHA256  $RUNNER_TEMP/$zip" | sha256sum -c -
+          unzip -q -j "$RUNNER_TEMP/$zip" "rclone-v${VERSION}-linux-amd64/rclone" -d "$RUNNER_TEMP/rclone"
+          sudo install -m 755 "$RUNNER_TEMP/rclone/rclone" /usr/local/bin/rclone
+          rclone version | head -1
+
       - name: tests/run.sh
         run: tests/run.sh

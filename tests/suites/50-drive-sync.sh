@@ -98,8 +98,10 @@ check "10 service runs the script with --yes" grep -q -- "executable_drive-sync 
 if command -v systemd-analyze >/dev/null; then
   systemd-analyze --user verify "$XDG_CONFIG_HOME/systemd/user/drive-sync.service" "$XDG_CONFIG_HOME/systemd/user/drive-sync.timer" >"$T/out" 2>&1
   rc=$?
-  if grep -q 'Read-only file system' "$T/out"; then skip "10 systemd-analyze verify (read-only FS, e.g. a sandbox)"
-  else check "10 systemd-analyze verify clean" test $rc -eq 0; fi
+  # Fail only on errors about our units; a machine without a user systemd (sandbox, CI runner) skips.
+  if (( rc == 0 )); then pass "10 systemd-analyze verify clean"
+  elif grep -qE 'drive-sync\.(service|timer)' "$T/out"; then fail "10 systemd-analyze verify: $(grep -m1 -E 'drive-sync\.(service|timer)' "$T/out")"
+  else skip "10 systemd-analyze verify (no user systemd here: $(head -n1 "$T/out"))"; fi
 fi
 
 # 11. changed filters are refused without --resync
