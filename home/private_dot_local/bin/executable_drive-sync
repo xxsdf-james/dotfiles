@@ -27,8 +27,14 @@ UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 SELF="$(realpath "$0")"
 
 usage() { sed -n '2,/^[^#]/p' "$SELF" | sed '$d; s/^# \{0,1\}//'; }
-die() { echo "ERROR: $*" >&2; exit 1; }
+die() { echo "ERROR: $*" >&2; declare -F notify >/dev/null && notify "error" "$*"; exit 1; }
 log() { mkdir -p "$STATE"; printf '%s %s\n' "$(date '+%F %T')" "$*" | tee -a "$STATE/sync.log"; }
+# Desktop notification when there's no terminal to see the error (the timer). DRIVE_SYNC_NOTIFY=1 forces it.
+notify() {
+  [[ -t 1 && "${DRIVE_SYNC_NOTIFY:-0}" != 1 ]] && return 0
+  command -v notify-send >/dev/null || return 0
+  notify-send -u critical -a drive-sync "drive-sync: $1" "$2" 2>/dev/null || true
+}
 
 parse_args() {
   while [[ $# -gt 0 ]]; do
@@ -95,12 +101,12 @@ write_filters() {
 - desktop.ini
 - .directory
 EOF
-  if ! cmp -s "$tmp" "$f" 2>/dev/null; then
+  if ! cmp -s <(grep -v '^#' "$tmp") <(grep -v '^#' "$f" 2>/dev/null); then
     if [[ -f "$f" ]] && (( ! RESYNC )); then
       rm -f "$tmp"; die "filters changed since the last run; run with --resync"
     fi
     mv "$tmp" "$f"
-  else rm -f "$tmp"; fi
+  else rm -f "$tmp"; fi   # same rules: keep the old file, so rclone's own hash of it stays valid
   FILTERS="$f"
 }
 
@@ -123,10 +129,15 @@ run_bisync() {
   local rc=${PIPESTATUS[0]}
   set -e
   if (( rc != 0 )); then
-    if (( ! RESYNC )) && grep -q 'resync' <(tail -n 20 "$STATE/sync.log"); then
-      log "bisync needs a first sync: run with --resync (dry run first)"
+    local hint="see $STATE/sync.log; drive-sync --status"
+    if grep -qiE 'invalid_grant|token.*(expired|revoked)|oauth2' <(tail -n 40 "$STATE/sync.log"); then
+      hint="Google login expired: run 'rclone config reconnect gdrive:' in a terminal"
+    elif (( ! RESYNC )) && grep -q 'resync' <(tail -n 20 "$STATE/sync.log"); then
+      hint="bisync needs a resync: drive-sync --resync (dry run first)"
     fi
-    log "bisync failed (exit $rc)"; return "$rc"
+    log "bisync failed (exit $rc): $hint"
+    notify "sync failed" "$hint"
+    return "$rc"
   fi
   log "bisync done"
 }
@@ -147,6 +158,7 @@ report_conflicts() {
   found="$( { find "$LOCAL" -name '*.conflict[0-9]*' 2>/dev/null
               rclone lsf -R --files-only --include '*.conflict[0-9]*' "$REMOTE" 2>/dev/null | sed "s|^|$REMOTE/|"; } || true)"
   if [[ -n "$found" ]]; then
+    notify "conflict copies" "$(echo "$found" | head -n 3)"
     echo "CONFLICT COPIES (merge by hand; kdbx: KeePassXC Database > Merge, then delete the copy):"
     echo "$found" | sed 's/^/  /'
   fi

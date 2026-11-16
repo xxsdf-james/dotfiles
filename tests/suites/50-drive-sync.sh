@@ -11,6 +11,9 @@ S="$REPO/home/private_dot_local/bin/executable_drive-sync"
 T="$WORK"
 export XDG_STATE_HOME="$T/state" XDG_CONFIG_HOME="$T/config"
 L="$T/local" R="$T/remote"
+# A fake notify-send for the whole suite: records calls, never touches the real desktop.
+mkdir -p "$T/bin"; printf '#!/bin/sh\necho "$*" >> "%s/notified"\n' "$T" > "$T/bin/notify-send"; chmod +x "$T/bin/notify-send"
+export PATH="$T/bin:$PATH" DRIVE_SYNC_NOTIFY=1
 run() { bash "$S" --local "$L" --remote "$R" --no-systemctl "$@" >"$T/out" 2>&1; }
 tree() { (cd "$1" && find . -type f | sort); }
 
@@ -98,6 +101,27 @@ fi
 # 11. changed filters are refused without --resync
 sed -i 's/^- \*\.tmp$/- *.temp/' "$XDG_STATE_HOME/drive-sync/filters.txt"
 run --yes; check "11 changed filters need --resync" grep -q 'filters changed' "$T/out"
+
+# 13. a script whose filter header comment changed (W5 fix: the header was renamed in the move)
+sed -i 's/^- \*\.temp$/- *.tmp/' "$XDG_STATE_HOME/drive-sync/filters.txt"   # undo 11: back to the real rules
+run --resync --yes                                                               # rclone re-hashes the restored file
+sed 's/^# drive-sync filters (written by drive-sync;/# drive-sync filters (a renamed header;/' "$S" > "$T/drive-sync-renamed"
+grep -q 'a renamed header' "$T/drive-sync-renamed" || fail "13 setup: header not renamed"
+bash "$T/drive-sync-renamed" --local "$L" --remote "$R" --no-systemctl --yes >"$T/out" 2>&1; rc=$?
+check "13 renamed header comment: sync exits 0" test $rc -eq 0
+refute "13 ... and no 'filters changed' error" grep -q 'filters changed' "$T/out"
+refute "13 ... and the file on disk is unchanged" grep -q 'a renamed header' "$XDG_STATE_HOME/drive-sync/filters.txt"
+
+# 14. notifications: a failed sync and conflict copies notify; the hint names the fix
+check "14 conflict copies notified (from 6)" grep -q 'conflict copies' "$T/notified"
+: > "$T/notified"; rm -rf "$XDG_STATE_HOME/drive-sync/bisync"   # listings gone: bisync must refuse
+run --yes; rc=$?
+check "14 sync without listings fails" test $rc -ne 0
+check "14 failure notified" grep -q 'sync failed' "$T/notified"
+check "14 ... with the resync hint" grep -q 'resync' "$T/notified"
+: > "$T/notified"
+bash "$S" --local "$T/new2" --remote "nosuchremote:Sync" --yes >"$T/out" 2>&1
+check "14 missing remote notified" grep -q 'error' "$T/notified"
 
 # 12. a log is kept
 check "12 log file written" test -s "$XDG_STATE_HOME/drive-sync/sync.log"
