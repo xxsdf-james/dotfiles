@@ -34,7 +34,9 @@ chezmoi init --no-tty --promptChoice "Machine role=personal" \
   --promptString "Git email (personal: GitHub no-reply address)=test@example.invalid" >/dev/null 2>&1
 check "chezmoi apply" chezmoi apply --no-tty
 check "chezmoi diff empty" test -z "$(chezmoi diff --no-pager)"
-if chezmoi doctor 2>&1 | grep -E '^\s*(error|failed)'; then fail "chezmoi doctor has errors"; else pass "chezmoi doctor: no errors"; fi
+# Ignored, as they say nothing about these dotfiles: latest-version (asks GitHub; CI hit "rate limit exceeded",
+# 2026-11-16) and hardlink (new in chezmoi 2.74; fails when the source and /tmp are on different filesystems).
+if chezmoi doctor 2>&1 | grep -E '^\s*(error|failed)' | grep -vE '^\s*(error|failed)\s+(latest-version|hardlink)\s'; then fail "chezmoi doctor has errors"; else pass "chezmoi doctor: no errors (latest-version, hardlink ignored)"; fi
 check "dotfiles-only: no Brewfiles" test ! -e ~/.homebrew
 check "git email from the prompt" test "$(git config --global user.email)" = test@example.invalid
 check "git hooks set (git present)" test "$(git -C ~/.local/share/chezmoi config core.hooksPath)" = .githooks
